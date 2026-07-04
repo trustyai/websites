@@ -1,0 +1,22 @@
+{
+  "name": "vgrooving-cms",
+  "version": "1.0.0",
+  "description": "V槽 CMS — 可视化内容管理后台 (前台展示 + 后台管理)",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js"
+  },
+  "keywords": [
+    "cms",
+    "vgrooving",
+    "landing-page"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "cookie-parser": "^1.4.7",
+    "express": "^4.19.2",
+    "multer": "^2.2.0"
+  }
+}

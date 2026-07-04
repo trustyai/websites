@@ -1,0 +1,133 @@
+{
+  "theme": "green",
+  "brand": {
+    "name": "V槽PRO",
+    "logo": "/assets/logo.png",
+    "navCta": "免费获取报价",
+    "navLinks": [
+      { "label": "选择设备", "href": "#need-section" },
+      { "label": "核心优势", "href": "#advantages" },
+      { "label": "全部产品", "href": "#all-products" },
+      { "label": "联系我们", "href": "#contact" }
+    ]
+  },
+  "hero": {
+    "eyebrow": "专业V槽开槽设备制造商",
+    "title": "找到最适合 你的开槽机",
+    "subtitle": "从您的材料和产能需求出发，精准匹配最合适的设备型号。灰纸板、MDF、卡纸、PVC，一机专攻。",
+    "cta": "开始选型",
+    "ctaHref": "#need-section",
+    "stats": [
+      { "num": "12+", "label": "设备型号" },
+      { "num": "5000+", "label": "全球客户" },
+      { "num": "98%", "label": "客户满意度" },
+      { "num": "24h", "label": "技术支持" }
+    ]
+  },
+  "advantages": {
+    "tag": "为什么选择我们",
+    "title": "专业实力，值得信赖",
+    "subtitle": "从研发到售后，为您的生产保驾护航",
+    "items": [
+      { "icon": "🏭", "title": "自主研发制造", "desc": "十余年开槽设备研发经验，核心部件自产，品质稳定可控。" },
+      { "icon": "🎯", "title": "精准选型服务", "desc": "工程师根据您的材料、厚度与产能，为您匹配最合适的机型。" },
+      { "icon": "🛠️", "title": "24h 技术支持", "desc": "全天候在线响应，远程视频指导，重点区域可上门服务。" },
+      { "icon": "🌍", "title": "全球交付网络", "desc": "已服务 5000+ 全球客户，出口经验丰富，包装物流无忧。" },
+      { "icon": "⚙️", "title": "多材料适配", "desc": "灰纸板、MDF、卡纸、PVC、蜂窝板，一机专攻，切换灵活。" },
+      { "icon": "🛡️", "title": "整机质保一年", "desc": "1 年质保 + 终身维护，配件充足，长期使用有保障。" }
+    ]
+  },
+  "products": {
+    "tag": "全系列产品",
+    "title": "探索我们的 完整产品线",
+    "subtitle": "从入门级到工业级，满足不同规模企业的多样化需求",
+    "items": [
+      {
+        "id": "manual",
+        "name": "手动V槽打样机",
+        "badge": "入门级",
+        "desc": "灵活轻便的打样工具，适合包装设计工作室和小批量多款式生产",
+        "tags": ["灰纸板", "卡纸", "小批量"],
+        "match": ["thin", "small"],
+        "media": [{ "type": "image", "src": "https://picsum.photos/seed/manual/600/380", "alt": "手动V槽打样机" }]
+      },
+      {
+        "id": "pneumatic",
+        "name": "气动V槽成型机",
+        "badge": "进阶级",
+        "desc": "高效稳定的气动驱动，适合中小型企业日常生产需求",
+        "tags": ["MDF板", "灰纸板", "中等批量"],
+        "match": ["thin", "medium"],
+        "media": [{ "type": "image", "src": "https://picsum.photos/seed/pneumatic/600/380", "alt": "气动V槽成型机" }]
+      },
+      {
+        "id": "cnc",
+        "name": "CNC数控V槽中心",
+        "badge": "专业级",
+        "desc": "全自动智能控制系统，适合大规模连续化生产",
+        "tags": ["多种材料", "大批量", "自动化"],
+        "match": ["medium", "large"],
+        "media": [{ "type": "image", "src": "https://picsum.photos/seed/cnc/600/380", "alt": "CNC数控V槽中心" }]
+      },
+      {
+        "id": "automatic",
+        "name": "全自动V槽生产线",
+        "badge": "高端级",
+        "desc": "集成送料、开槽、收料一体化解决方案",
+        "tags": ["工业级", "大批量", "智能化"],
+        "match": ["large"],
+        "media": [{ "type": "image", "src": "https://picsum.photos/seed/automatic/600/380", "alt": "全自动V槽生产线" }]
+      },
+      {
+        "id": "portable",
+        "name": "便携式V槽切割机",
+        "badge": "便携式",
+        "desc": "轻巧便携，适合现场作业和移动生产",
+        "tags": ["便携", "灵活性", "小批量"],
+        "match": ["thin", "small"],
+        "media": [{ "type": "image", "src": "https://picsum.photos/seed/portable/600/380", "alt": "便携式V槽切割机" }]
+      },
+      {
+        "id": "industrial",
+        "name": "工业级V槽工作站",
+        "badge": "工业级",
+        "desc": "重型工业设计，满足高强度连续作业需求",
+        "tags": ["重型", "高精度", "大批量"],
+        "match": ["thick", "large"],
+        "media": [{ "type": "image", "src": "https://picsum.photos/seed/industrial/600/380", "alt": "工业级V槽工作站" }]
+      }
+    ]
+  },
+  "contact": {
+    "tag": "联系我们",
+    "title": "开始您的 选型咨询",
+    "subtitle": "留下需求，工程师将在 24 小时内与您联系，提供专业选型建议与报价。",
+    "ctaText": "免费获取报价",
+    "phone": "+86 138-0000-0000",
+    "email": "sales@vgrooving.com",
+    "wechat": "vgrooving-pro"
+  },
+  "footer": {
+    "copyright": "© 2026 V槽PRO. 专业V槽开槽设备制造商"
+  },
+  "chat": {
+    "agentName": "技术顾问 李工",
+    "avatar": "李",
+    "status": "在线 · 通常1分钟内回复",
+    "greeting": "您好！我是V槽PRO的技术顾问李工，请问有什么可以帮您的吗？",
+    "quickChips": [
+      "手动V槽打样机",
+      "气动V槽成型机价格",
+      "设备选型建议",
+      "技术支持"
+    ],
+    "replies": [
+      { "keywords": ["手动", "打样"], "text": "手动V槽打样机非常适合小批量生产，入门首选！价格区间 ¥8,000—¥18,000，支持灰纸板、卡纸等多种材料。需要我发详细参数吗？" },
+      { "keywords": ["气动", "价格", "报价"], "text": "气动V槽成型机是我们的热销商，适合中小企业。标配价 ¥28,000 起，高配约 ¥45,000。可根据您的材料厚度定制，需要了解您的具体需求吗？" },
+      { "keywords": ["选型", "选择", "建议"], "text": "选型主要看三个维度：材料类型、日产量、特殊功能。点击页面上方的「开始选型」，填完几步我们为您智能匹配！" },
+      { "keywords": ["技术", "支持", "维修"], "text": "我们提供 24h 技术支持，设备有 1 年质量保修。重点区域可上门服务，其他地区提供远程视频指导。请问您遇到了什么具体问题？" },
+      { "keywords": ["cnc", "数控"], "text": "CNC数控V槽中心是我们的高端产品线，全自动化控制，适合大批量连续生产。价格 ¥80,000 起，可以联系我们获取详细方案和报价。" }
+    ],
+    "fallback": "感谢您的咨询，我是V槽PRO的技术顾问李工。请告诉我您的材料类型和日均产量，我为您精准推荐最适合的设备型号 👍"
+  }
+}
