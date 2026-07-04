@@ -1,0 +1,9 @@
+node_modules/
+# 运行后生成的实际数据（保留默认模板 content.default.json）
+data/content.json
+data/config.json
+# 上传的文件（保留目录）
+public/uploads/*
+!public/uploads/.gitkeep
+npm-debug.log*
+.DS_Store

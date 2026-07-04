@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>V槽开槽机 — 专业开槽设备制造商</title>
+<meta name="description" content="专业V槽开槽设备制造商，从材料与产能需求出发，精准匹配最合适的设备型号。">
+<link rel="icon" href="/assets/logo.png">
+<link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+
+<nav>
+  <a href="#" class="logo" id="navLogo"></a>
+  <ul class="nav-links" id="navLinks"></ul>
+  <button class="nav-btn" id="navCta" onclick="openChat()"></button>
+</nav>
+
+<!-- 英雄区域 -->
+<div class="hero">
+  <div class="hero-background"></div>
+  <div class="hero-content" id="heroContent"></div>
+</div>
+
+<!-- 智能选型 -->
+<section id="need-section" class="need-section fade-up">
+  <div class="need-header">
+    <div class="tag">智能选型</div>
+    <h2>根据您的需求<br>推荐最适合的设备</h2>
+    <p>只需 4 个简单步骤，即可获得个性化设备推荐</p>
+  </div>
+
+  <div class="step-label"><div class="num">1</div><div>主要加工什么材料？</div></div>
+  <div class="material-grid">
+    <div class="mat-card" data-material="greyboard"><div class="mat-icon">📄</div><div class="mat-name">灰纸板</div><div class="mat-desc">厚度1-5mm，高密度</div></div>
+    <div class="mat-card" data-material="mdf"><div class="mat-icon">🪵</div><div class="mat-name">MDF板</div><div class="mat-desc">中密度纤维板</div></div>
+    <div class="mat-card" data-material="cardstock"><div class="mat-icon">📋</div><div class="mat-name">卡纸</div><div class="mat-desc">艺术纸、特种纸</div></div>
+    <div class="mat-card" data-material="pvc"><div class="mat-icon">🧱</div><div class="mat-name">PVC板</div><div class="mat-desc">塑料板材</div></div>
+    <div class="mat-card" data-material="honeycomb"><div class="mat-icon">🔲</div><div class="mat-name">蜂窝板</div><div class="mat-desc">轻质蜂窝结构板</div></div>
+    <div class="mat-card" data-material="other"><div class="mat-icon">❓</div><div class="mat-name">其他材料</div><div class="mat-desc">亚克力、铝塑板等</div></div>
+  </div>
+
+  <div class="step-label"><div class="num">2</div><div>材料厚度范围？</div></div>
+  <div class="thickness-row">
+    <div class="thick-card" data-thickness="thin"><div class="thick-ico">📐</div><div class="thick-info"><h4>0.5-4mm</h4><p>薄板材料</p></div></div>
+    <div class="thick-card" data-thickness="medium"><div class="thick-ico">📏</div><div class="thick-info"><h4>4-8mm</h4><p>中等厚度</p></div></div>
+    <div class="thick-card" data-thickness="thick"><div class="thick-ico">📐</div><div class="thick-info"><h4>8-12mm</h4><p>厚板材料</p></div></div>
+    <div class="thick-card" data-thickness="custom"><div class="thick-ico">⚙️</div><div class="thick-info"><h4>12mm以上</h4><p>超厚板材定制</p></div></div>
+  </div>
+
+  <div class="step-label"><div class="num">3</div><div>日均产量需求？</div></div>
+  <div class="scale-row">
+    <div class="scale-card" data-scale="small"><div class="scale-ico">1️⃣</div><div class="scale-info"><h4>小批量</h4><p>日产量 &lt; 500件，样品制作</p></div></div>
+    <div class="scale-card" data-scale="medium"><div class="scale-ico">2️⃣</div><div class="scale-info"><h4>中等批量</h4><p>日产量 500-2000件</p></div></div>
+    <div class="scale-card" data-scale="large"><div class="scale-ico">3️⃣</div><div class="scale-info"><h4>大批量</h4><p>日产量 &gt; 2000件</p></div></div>
+  </div>
+
+  <div class="step-label"><div class="num">4</div><div>需要哪些特殊功能？（可选）</div></div>
+  <div class="feature-grid">
+    <div class="feat-card" data-feature="auto-feed"><div class="feat-dot"></div><span>自动送料系统</span></div>
+    <div class="feat-card" data-feature="digital-control"><div class="feat-dot"></div><span>数字化控制面板</span></div>
+    <div class="feat-card" data-feature="quick-change"><div class="feat-dot"></div><span>快速刀具更换</span></div>
+    <div class="feat-card" data-feature="dust-collection"><div class="feat-dot"></div><span>集成除尘系统</span></div>
+    <div class="feat-card" data-feature="precision-guide"><div class="feat-dot"></div><span>精密导向装置</span></div>
+    <div class="feat-card" data-feature="safety-guard"><div class="feat-dot"></div><span>安全防护装置</span></div>
+  </div>
+
+  <div class="result-box" id="resultBox">
+    <div class="result-title">为您推荐以下设备</div>
+    <div class="result-products" id="resultProducts"></div>
+    <div class="result-note" id="resultNote"></div>
+  </div>
+</section>
+
+<!-- 核心优势 -->
+<section id="advantages" class="need-section fade-up">
+  <div class="need-header" id="advHeader"></div>
+  <div class="adv-grid" id="advGrid"></div>
+</section>
+
+<!-- 全部产品 -->
+<section id="all-products" class="need-section fade-up">
+  <div class="need-header" id="prodHeader"></div>
+  <div class="result-products" id="allProducts"></div>
+</section>
+
+<!-- 联系我们 -->
+<section id="contact" class="contact-section fade-up">
+  <div class="contact-box" id="contactBox"></div>
+</section>
+
+<footer id="siteFooter"></footer>
+
+<!-- 聊天窗口 -->
+<button class="chat-fab" id="chatFab" onclick="openChat()">💬</button>
+<div class="chat-window" id="chatWindow">
+  <div class="chat-win-header">
+    <div class="cw-ava" id="cwAva">李</div>
+    <div class="cw-info">
+      <strong id="cwName">技术顾问</strong>
+      <span id="cwStatus">在线</span>
+    </div>
+    <div class="cw-status"></div>
+  </div>
+  <div class="chat-msgs" id="chatMsgs"></div>
+  <div class="chat-quick-chips" id="chatChips"></div>
+  <div class="chat-input-row">
+    <textarea class="c-inp" id="cInp" placeholder="输入您的问题..." rows="1" oninput="this.style.height='auto';this.style.height=Math.min(this.scrollHeight,100)+'px'"></textarea>
+    <button class="c-send" onclick="cSend()">➤</button>
+  </div>
+</div>
+
+<!-- 灯箱 -->
+<div class="lightbox" id="lightbox"></div>
+
+<script src="/themes/themes.js"></script>
+<script src="/app.js"></script>
+</body>
+</html>
