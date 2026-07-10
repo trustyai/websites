@@ -1,686 +1,463 @@
-/* V槽 CMS 后台逻辑 */
+/* V槽 CMS 多语言后台 */
 (function () {
   const $ = (s, r) => (r || document).querySelector(s);
   const $$ = (s, r) => Array.from((r || document).querySelectorAll(s));
 
   let data = {};
+  let lang = 'zh';
+  let currentSec = 'brand';
   let dirty = false;
 
-  const SEC_TITLES = {
-    brand: '品牌与主题',
-    hero: '首页文案',
-    adv: '核心优势',
-    products: '产品管理',
-    contact: '联系与页脚',
-    chat: '在线客服',
-    account: '账号安全',
-  };
+  const SEC_TITLES = { brand: '品牌与导航', hero: '首页文案', wizard: '智能选型', products: '产品管理', contact: '联系页', chat: '在线客服', account: '账号安全' };
 
-  function toast(msg, kind) {
-    const t = $('#toast');
-    t.textContent = msg;
-    t.className = 'show ' + (kind || '');
-    setTimeout(() => (t.className = kind || ''), 2200);
-  }
+  function L() { data.i18n = data.i18n || {}; data.i18n[lang] = data.i18n[lang] || {}; return data.i18n[lang]; }
+  function esc(s) { const d = document.createElement('div'); d.textContent = s == null ? '' : String(s); return d.innerHTML; }
+  function toast(m, k) { const t = $('#toast'); t.textContent = m; t.className = 'show ' + (k || ''); setTimeout(() => (t.className = k || ''), 2200); }
+  function markDirty() { dirty = true; const h = $('#saveHint'); h.textContent = '有未保存的修改'; h.classList.add('dirty'); }
+  function markClean() { dirty = false; const h = $('#saveHint'); h.textContent = '已保存'; h.classList.remove('dirty'); }
 
-  function markDirty() {
-    dirty = true;
-    const h = $('#saveHint');
-    h.textContent = '有未保存的修改';
-    h.classList.add('dirty');
-  }
-  function markClean() {
-    dirty = false;
-    const h = $('#saveHint');
-    h.textContent = '已保存';
-    h.classList.remove('dirty');
-  }
-
-  function esc(s) {
-    const d = document.createElement('div');
-    d.textContent = s == null ? '' : String(s);
-    return d.innerHTML;
-  }
-
-  // 通用：创建绑定输入
   function field(label, obj, key, opts) {
     opts = opts || {};
-    const wrap = document.createElement('div');
-    wrap.className = 'row';
-    const id = 'f' + Math.random().toString(36).slice(2, 8);
-    let control;
-    if (opts.textarea) {
-      control = document.createElement('textarea');
-      control.rows = opts.rows || 3;
-    } else {
-      control = document.createElement('input');
-      control.type = opts.type || 'text';
-    }
-    control.className = 'inp';
-    control.id = id;
-    control.value = obj[key] != null ? obj[key] : '';
-    if (opts.placeholder) control.placeholder = opts.placeholder;
-    control.addEventListener('input', () => {
-      obj[key] = control.value;
-      markDirty();
-      if (opts.onInput) opts.onInput(control.value);
-    });
-    wrap.innerHTML = '<label class="lbl" for="' + id + '">' + esc(label) + '</label>';
-    wrap.appendChild(control);
-    if (opts.hint) {
-      const h = document.createElement('div');
-      h.className = 'hint';
-      h.style.marginTop = '0.3rem';
-      h.textContent = opts.hint;
-      wrap.appendChild(h);
-    }
+    const wrap = document.createElement('div'); wrap.className = 'row';
+    let ctl;
+    if (opts.textarea) { ctl = document.createElement('textarea'); ctl.rows = opts.rows || 3; }
+    else if (opts.select) {
+      ctl = document.createElement('select');
+      (opts.options || []).forEach((o) => { const op = document.createElement('option'); op.value = o.value; op.textContent = o.label; ctl.appendChild(op); });
+    } else { ctl = document.createElement('input'); ctl.type = opts.type || 'text'; }
+    ctl.className = 'inp';
+    ctl.value = obj[key] != null ? obj[key] : (opts.default != null ? opts.default : '');
+    if (opts.placeholder) ctl.placeholder = opts.placeholder;
+    ctl.addEventListener('input', () => { obj[key] = ctl.value; markDirty(); if (opts.onInput) opts.onInput(ctl.value); });
+    ctl.addEventListener('change', () => { obj[key] = ctl.value; markDirty(); if (opts.onInput) opts.onInput(ctl.value); });
+    if (label) { const l = document.createElement('label'); l.className = 'lbl'; l.textContent = label; wrap.appendChild(l); }
+    wrap.appendChild(ctl);
+    if (opts.hint) { const h = document.createElement('div'); h.className = 'hint'; h.style.margin = '0.3rem 0 0'; h.textContent = opts.hint; wrap.appendChild(h); }
     return wrap;
   }
+  // 逗号分隔数组字段
+  function csvField(label, obj, key, opts) {
+    opts = opts || {};
+    return field(label, { v: (obj[key] || []).join(', ') }, 'v', Object.assign({}, opts, {
+      onInput: (val) => { obj[key] = val.split(/[,，]/).map((s) => s.trim()).filter(Boolean); },
+    }));
+  }
+  function card(title) { const c = document.createElement('div'); c.className = 'card'; if (title) { const h = document.createElement('h3'); h.textContent = title; c.appendChild(h); } return c; }
+  function hint(c, text) { const h = document.createElement('div'); h.className = 'hint'; h.textContent = text; c.appendChild(h); return h; }
+  function iconBtn(t, cls, fn) { const b = document.createElement('button'); b.type = 'button'; b.className = 'icon-btn ' + (cls || ''); b.textContent = t; b.addEventListener('click', fn); return b; }
+  function moveItem(arr, i, d, rerender) { const j = i + d; if (j < 0 || j >= arr.length) return; const t = arr[i]; arr[i] = arr[j]; arr[j] = t; markDirty(); rerender(); }
 
-  function card(title) {
-    const c = document.createElement('div');
-    c.className = 'card';
-    if (title) {
-      const h = document.createElement('h3');
-      h.textContent = title;
-      c.appendChild(h);
-    }
-    return c;
+  // 通用列表编辑器
+  function renderList(host, arr, opts) {
+    arr = arr || [];
+    arr.forEach((item, i) => {
+      const it = document.createElement('div'); it.className = 'list-item';
+      const head = document.createElement('div'); head.className = 'li-head';
+      const title = document.createElement('span'); title.className = 'li-title'; title.textContent = opts.label ? opts.label(item, i) : '#' + (i + 1);
+      head.appendChild(title);
+      const acts = document.createElement('div'); acts.className = 'li-actions';
+      if (opts.sortable !== false) {
+        acts.appendChild(iconBtn('↑', '', () => moveItem(arr, i, -1, opts.rerender)));
+        acts.appendChild(iconBtn('↓', '', () => moveItem(arr, i, 1, opts.rerender)));
+      }
+      acts.appendChild(iconBtn('✕', 'del', () => { if (!opts.confirm || confirm(opts.confirm)) { arr.splice(i, 1); markDirty(); opts.rerender(); } }));
+      head.appendChild(acts); it.appendChild(head);
+      opts.fields(item, it, i);
+      host.appendChild(it);
+    });
+    const add = document.createElement('button'); add.className = 'add-btn'; add.type = 'button'; add.textContent = opts.addLabel || '+ 添加';
+    add.addEventListener('click', () => { arr.push(opts.makeDefault ? opts.makeDefault() : {}); markDirty(); opts.rerender(); });
+    host.appendChild(add);
   }
 
-  function iconBtn(txt, cls, onClick) {
-    const b = document.createElement('button');
-    b.type = 'button';
-    b.className = 'icon-btn ' + (cls || '');
-    b.textContent = txt;
-    b.addEventListener('click', onClick);
-    return b;
-  }
-
-  // 上传文件 -> 返回 {url,type}
   async function uploadFile(file) {
-    const fd = new FormData();
-    fd.append('file', file);
+    const fd = new FormData(); fd.append('file', file);
     const res = await fetch('/api/upload', { method: 'POST', body: fd });
-    if (!res.ok) {
-      const e = await res.json().catch(() => ({}));
-      throw new Error(e.error || '上传失败');
-    }
+    if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.error || '上传失败'); }
     return res.json();
   }
+  // 媒体列表编辑（图片/视频）
+  function mediaEditor(container, arr, rerender, accept) {
+    const list = document.createElement('div'); list.className = 'media-list';
+    (arr || []).forEach((m, i) => {
+      const th = document.createElement('div'); th.className = 'media-thumb';
+      th.innerHTML = (m.type === 'video' ? '<video src="' + esc(m.src) + '" muted></video><span class="mt-type">视频</span>' : '<img src="' + esc(m.src) + '"><span class="mt-type">图片</span>');
+      const del = document.createElement('div'); del.className = 'mt-del'; del.textContent = '✕';
+      del.addEventListener('click', () => { arr.splice(i, 1); markDirty(); rerender(); });
+      th.appendChild(del); list.appendChild(th);
+    });
+    container.appendChild(list);
+    const up = document.createElement('label'); up.className = 'btn ghost'; up.textContent = '+ 上传' + (accept && accept.indexOf('video') > -1 ? '图片/视频' : '图片');
+    const fi = document.createElement('input'); fi.type = 'file'; fi.accept = accept || 'image/*'; fi.className = 'hidden';
+    fi.addEventListener('change', async () => {
+      if (!fi.files[0]) return; up.textContent = '上传中...';
+      try { const r = await uploadFile(fi.files[0]); arr.push({ type: r.type, src: r.url, alt: '' }); markDirty(); rerender(); }
+      catch (e) { toast(e.message, 'bad'); }
+      up.textContent = '+ 上传';
+    });
+    up.appendChild(fi); container.appendChild(up);
+  }
 
-  // ---------- 品牌与主题 ----------
+  // ============ 各分区 ============
   function renderBrand() {
-    const sec = $('#secBrand');
-    sec.innerHTML = '';
+    const sec = $('#secBrand'); sec.innerHTML = '';
     data.brand = data.brand || {};
-    const b = data.brand;
-
-    const c1 = card('品牌信息');
-    c1.appendChild(field('品牌名称', b, 'name'));
-    c1.appendChild(field('导航按钮文字', b, 'navCta', { placeholder: '如：免费获取报价' }));
-
-    // Logo 上传
-    const logoRow = document.createElement('div');
-    logoRow.className = 'row';
+    // 全局
+    const c0 = card('全局设置（所有语言共用）');
+    const logoRow = document.createElement('div'); logoRow.className = 'row';
     logoRow.innerHTML = '<label class="lbl">Logo 图片</label>';
-    const preview = document.createElement('div');
-    preview.className = 'logo-preview';
-    preview.innerHTML = b.logo ? '<img src="' + esc(b.logo) + '">' : '<span style="color:var(--muted);font-size:0.8rem">未设置</span>';
-    const upBtn = document.createElement('label');
-    upBtn.className = 'btn ghost';
-    upBtn.style.marginLeft = '0.6rem';
-    upBtn.textContent = '上传 Logo';
-    const fileInp = document.createElement('input');
-    fileInp.type = 'file';
-    fileInp.accept = 'image/*';
-    fileInp.className = 'hidden';
-    fileInp.addEventListener('change', async () => {
-      if (!fileInp.files[0]) return;
-      upBtn.textContent = '上传中...';
-      try {
-        const r = await uploadFile(fileInp.files[0]);
-        b.logo = r.url;
-        markDirty();
-        renderBrand();
-      } catch (e) {
-        toast(e.message, 'bad');
-      }
-      upBtn.textContent = '上传 Logo';
+    const flex = document.createElement('div'); flex.style.cssText = 'display:flex;align-items:center;gap:0.6rem';
+    const prev = document.createElement('div'); prev.className = 'logo-preview';
+    prev.innerHTML = data.brand.logo ? '<img src="' + esc(data.brand.logo) + '">' : '<span style="color:var(--muted);font-size:0.8rem">未设置</span>';
+    const up = document.createElement('label'); up.className = 'btn ghost'; up.textContent = '上传 Logo';
+    const fi = document.createElement('input'); fi.type = 'file'; fi.accept = 'image/*'; fi.className = 'hidden';
+    fi.addEventListener('change', async () => { if (!fi.files[0]) return; up.textContent = '上传中...'; try { const r = await uploadFile(fi.files[0]); data.brand.logo = r.url; markDirty(); renderBrand(); } catch (e) { toast(e.message, 'bad'); } });
+    up.appendChild(fi); flex.appendChild(prev); flex.appendChild(up); logoRow.appendChild(flex); c0.appendChild(logoRow);
+    c0.appendChild(field('默认语言', data, 'defaultLang', { select: true, options: (data.langs || []).map((l) => ({ value: l.code, label: l.code + ' · ' + l.label })) }));
+    sec.appendChild(c0);
+
+    // 语言列表（共用）
+    const cL = card('语言列表（共用）');
+    hint(cL, '语言切换器里显示的名称与文字方向（rtl 用于阿拉伯语等从右到左的语言）');
+    data.langs = data.langs || [];
+    renderList(cL, data.langs, {
+      label: (l) => l.code, rerender: renderBrand, confirm: '删除该语言？该语言下的所有内容也会失效',
+      fields: (l, host) => {
+        const g = document.createElement('div'); g.className = 'grid3';
+        g.appendChild(field('代码', l, 'code', { placeholder: 'en' }));
+        g.appendChild(field('显示名称', l, 'label', { placeholder: 'English' }));
+        g.appendChild(field('方向', l, 'dir', { select: true, options: [{ value: 'ltr', label: '从左到右 ltr' }, { value: 'rtl', label: '从右到左 rtl' }] }));
+        host.appendChild(g);
+      },
+      addLabel: '+ 添加语言', makeDefault: () => ({ code: 'xx', label: '新语言', dir: 'ltr' }),
     });
-    upBtn.appendChild(fileInp);
-    const flex = document.createElement('div');
-    flex.style.display = 'flex';
-    flex.style.alignItems = 'center';
-    flex.appendChild(preview);
-    flex.appendChild(upBtn);
-    logoRow.appendChild(flex);
-    c1.appendChild(logoRow);
+    sec.appendChild(cL);
+
+    // 当前语言品牌与导航
+    const l = L();
+    const c1 = card('【' + lang + '】品牌与导航');
+    c1.appendChild(field('品牌名称（文字 Logo / 页脚显示）', l, 'brandName'));
+    l.nav = l.nav || { links: [], cta: '' };
+    c1.appendChild(field('导航按钮文字', l.nav, 'cta'));
+    const navHost = document.createElement('div'); navHost.className = 'row';
+    navHost.innerHTML = '<label class="lbl">导航菜单</label>';
+    hint(navHost, '锚点链接如 #need-section / #all-products；含“在线咨询/Inquiry”等且链接为 # 时会自动打开客服窗口');
+    renderList(navHost, l.nav.links, {
+      label: (x, i) => '菜单 ' + (i + 1), rerender: renderBrand,
+      fields: (x, host) => { const g = document.createElement('div'); g.className = 'grid2'; g.appendChild(field('文字', x, 'label')); g.appendChild(field('链接', x, 'href')); host.appendChild(g); },
+      addLabel: '+ 添加菜单', makeDefault: () => ({ label: '新菜单', href: '#' }),
+    });
+    c1.appendChild(navHost);
     sec.appendChild(c1);
-
-    // 导航菜单
-    const c2 = card('导航菜单');
-    const navHint = document.createElement('div');
-    navHint.className = 'hint';
-    navHint.textContent = '链接可填页面锚点，如 #need-section / #advantages / #all-products / #contact';
-    c2.appendChild(navHint);
-    b.navLinks = b.navLinks || [];
-    b.navLinks.forEach((lnk, i) => {
-      const item = document.createElement('div');
-      item.className = 'list-item';
-      const head = document.createElement('div');
-      head.className = 'li-head';
-      head.innerHTML = '<span class="li-title">菜单 ' + (i + 1) + '</span>';
-      const acts = document.createElement('div');
-      acts.className = 'li-actions';
-      acts.appendChild(iconBtn('↑', '', () => moveItem(b.navLinks, i, -1, renderBrand)));
-      acts.appendChild(iconBtn('↓', '', () => moveItem(b.navLinks, i, 1, renderBrand)));
-      acts.appendChild(iconBtn('✕', 'del', () => { b.navLinks.splice(i, 1); markDirty(); renderBrand(); }));
-      head.appendChild(acts);
-      item.appendChild(head);
-      const g = document.createElement('div');
-      g.className = 'grid2';
-      g.appendChild(field('文字', lnk, 'label'));
-      g.appendChild(field('链接', lnk, 'href'));
-      item.appendChild(g);
-      c2.appendChild(item);
-    });
-    const addNav = document.createElement('button');
-    addNav.className = 'add-btn';
-    addNav.type = 'button';
-    addNav.textContent = '+ 添加菜单项';
-    addNav.addEventListener('click', () => { b.navLinks.push({ label: '新菜单', href: '#' }); markDirty(); renderBrand(); });
-    c2.appendChild(addNav);
-    sec.appendChild(c2);
-
-    // 主题选择
-    const c3 = card('主题风格');
-    const th = document.createElement('div');
-    th.className = 'hint';
-    th.textContent = '点击切换整站配色与字体，前台立即生效（保存后永久）。';
-    c3.appendChild(th);
-    const grid = document.createElement('div');
-    grid.className = 'theme-grid';
-    const themes = window.VG_THEMES || {};
-    Object.entries(themes).forEach(([key, t]) => {
-      const tc = document.createElement('div');
-      tc.className = 'theme-card' + ((data.theme || 'green') === key ? ' selected' : '');
-      tc.innerHTML =
-        '<div class="theme-swatch">' +
-        '<span style="background:' + t.vars['--primary'] + '"></span>' +
-        '<span style="background:' + t.vars['--accent'] + '"></span>' +
-        '<span style="background:' + t.vars['--dark'] + '"></span>' +
-        '</div><div class="tc-name">' + esc(t.name) + '</div>' +
-        '<div class="tc-desc">' + esc(t.desc || '') + '</div>';
-      tc.addEventListener('click', () => {
-        data.theme = key;
-        markDirty();
-        renderBrand();
-      });
-      grid.appendChild(tc);
-    });
-    c3.appendChild(grid);
-    sec.appendChild(c3);
   }
 
-  // ---------- 首页文案 ----------
   function renderHero() {
-    const sec = $('#secHero');
-    sec.innerHTML = '';
-    data.hero = data.hero || {};
-    const h = data.hero;
-    const c1 = card('首屏文案');
-    c1.appendChild(field('小标签（eyebrow）', h, 'eyebrow'));
-    c1.appendChild(field('大标题', h, 'title', { hint: '第一个空格之后的文字会自动换行并用主题色高亮。例：找到最适合 你的开槽机' }));
-    c1.appendChild(field('副标题', h, 'subtitle', { textarea: true }));
-    const g = document.createElement('div');
-    g.className = 'grid2';
-    g.appendChild(field('按钮文字', h, 'cta'));
-    g.appendChild(field('按钮链接', h, 'ctaHref', { placeholder: '#need-section' }));
-    c1.appendChild(g);
+    const sec = $('#secHero'); sec.innerHTML = '';
+    const l = L(); l.hero = l.hero || {};
+    const h = l.hero;
+    const c1 = card('【' + lang + '】首屏文案');
+    c1.appendChild(field('小标签', h, 'eyebrow'));
+    c1.appendChild(field('大标题', h, 'title', { textarea: true, rows: 2, hint: '用 *星号* 包住要高亮的文字；换行用回车。例：找到*最适合*\\n你的*开槽机*' }));
+    c1.appendChild(field('副标题', h, 'subtitle', { textarea: true, rows: 2 }));
+    c1.appendChild(field('按钮文字', h, 'cta'));
+    c1.appendChild(field('页面标题(浏览器标签/SEO)', l.meta = l.meta || {}, 'title'));
     sec.appendChild(c1);
-
-    const c2 = card('数据指标（4 个）');
+    const c2 = card('数据指标');
     h.stats = h.stats || [];
-    h.stats.forEach((s, i) => {
-      const item = document.createElement('div');
-      item.className = 'list-item';
-      const head = document.createElement('div');
-      head.className = 'li-head';
-      head.innerHTML = '<span class="li-title">指标 ' + (i + 1) + '</span>';
-      const acts = document.createElement('div');
-      acts.className = 'li-actions';
-      acts.appendChild(iconBtn('↑', '', () => moveItem(h.stats, i, -1, renderHero)));
-      acts.appendChild(iconBtn('↓', '', () => moveItem(h.stats, i, 1, renderHero)));
-      acts.appendChild(iconBtn('✕', 'del', () => { h.stats.splice(i, 1); markDirty(); renderHero(); }));
-      head.appendChild(acts);
-      item.appendChild(head);
-      const gg = document.createElement('div');
-      gg.className = 'grid2';
-      gg.appendChild(field('数值', s, 'num', { placeholder: '如 5000+' }));
-      gg.appendChild(field('说明', s, 'label', { placeholder: '如 全球客户' }));
-      item.appendChild(gg);
-      c2.appendChild(item);
+    renderList(c2, h.stats, {
+      label: (x, i) => '指标 ' + (i + 1), rerender: renderHero,
+      fields: (x, host) => { const g = document.createElement('div'); g.className = 'grid2'; g.appendChild(field('数值', x, 'num')); g.appendChild(field('说明', x, 'label')); host.appendChild(g); },
+      addLabel: '+ 添加指标', makeDefault: () => ({ num: '', label: '' }),
     });
-    const addStat = document.createElement('button');
-    addStat.className = 'add-btn';
-    addStat.type = 'button';
-    addStat.textContent = '+ 添加指标';
-    addStat.addEventListener('click', () => { h.stats.push({ num: '', label: '' }); markDirty(); renderHero(); });
-    c2.appendChild(addStat);
     sec.appendChild(c2);
   }
 
-  // ---------- 核心优势 ----------
-  function renderAdv() {
-    const sec = $('#secAdv');
-    sec.innerHTML = '';
-    data.advantages = data.advantages || { items: [] };
-    const a = data.advantages;
-    const c1 = card('板块标题');
-    c1.appendChild(field('标签', a, 'tag'));
-    c1.appendChild(field('标题', a, 'title', { hint: '第一个空格之后的文字会高亮' }));
-    c1.appendChild(field('副标题', a, 'subtitle'));
+  function renderWizard() {
+    const sec = $('#secWizard'); sec.innerHTML = '';
+    const l = L(); l.wizard = l.wizard || {};
+    const w = l.wizard;
+    const c1 = card('【' + lang + '】板块文案');
+    c1.appendChild(field('标签', w, 'tag'));
+    c1.appendChild(field('标题', w, 'title', { textarea: true, rows: 2, hint: '换行用回车，*星号*高亮' }));
+    c1.appendChild(field('副标题', w, 'subtitle'));
+    const g = document.createElement('div'); g.className = 'grid2';
+    g.appendChild(field('步骤1 标题', w, 'step1')); g.appendChild(field('步骤2 标题', w, 'step2'));
+    g.appendChild(field('步骤3 标题', w, 'step3')); g.appendChild(field('步骤4 标题', w, 'step4'));
+    c1.appendChild(g);
+    c1.appendChild(field('推荐结果标题', w, 'resultTitle'));
     sec.appendChild(c1);
 
-    const c2 = card('优势条目');
-    a.items = a.items || [];
-    a.items.forEach((it, i) => {
-      const item = document.createElement('div');
-      item.className = 'list-item';
-      const head = document.createElement('div');
-      head.className = 'li-head';
-      head.innerHTML = '<span class="li-title">优势 ' + (i + 1) + '</span>';
-      const acts = document.createElement('div');
-      acts.className = 'li-actions';
-      acts.appendChild(iconBtn('↑', '', () => moveItem(a.items, i, -1, renderAdv)));
-      acts.appendChild(iconBtn('↓', '', () => moveItem(a.items, i, 1, renderAdv)));
-      acts.appendChild(iconBtn('✕', 'del', () => { a.items.splice(i, 1); markDirty(); renderAdv(); }));
-      head.appendChild(acts);
-      item.appendChild(head);
-      const g = document.createElement('div');
-      g.className = 'grid2';
-      g.appendChild(field('图标（emoji）', it, 'icon', { placeholder: '如 🏭' }));
-      g.appendChild(field('标题', it, 'title'));
-      item.appendChild(g);
-      item.appendChild(field('描述', it, 'desc', { textarea: true, rows: 2 }));
-      c2.appendChild(item);
-    });
-    const add = document.createElement('button');
-    add.className = 'add-btn';
-    add.type = 'button';
-    add.textContent = '+ 添加优势';
-    add.addEventListener('click', () => { a.items.push({ icon: '⭐', title: '新优势', desc: '' }); markDirty(); renderAdv(); });
-    c2.appendChild(add);
-    sec.appendChild(c2);
-  }
-
-  // ---------- 产品管理 ----------
-  function renderProducts() {
-    const sec = $('#secProducts');
-    sec.innerHTML = '';
-    data.products = data.products || { items: [] };
-    const pr = data.products;
-    const c1 = card('板块标题');
-    c1.appendChild(field('标签', pr, 'tag'));
-    c1.appendChild(field('标题', pr, 'title', { hint: '第一个空格之后的文字会高亮' }));
-    c1.appendChild(field('副标题', pr, 'subtitle'));
-    sec.appendChild(c1);
-
-    pr.items = pr.items || [];
-    pr.items.forEach((p, i) => {
-      const c = card('');
-      const head = document.createElement('div');
-      head.className = 'li-head';
-      head.innerHTML = '<span class="li-title">📦 ' + esc(p.name || '产品') + '</span>';
-      const acts = document.createElement('div');
-      acts.className = 'li-actions';
-      acts.appendChild(iconBtn('↑', '', () => moveItem(pr.items, i, -1, renderProducts)));
-      acts.appendChild(iconBtn('↓', '', () => moveItem(pr.items, i, 1, renderProducts)));
-      acts.appendChild(iconBtn('✕', 'del', () => { if (confirm('确定删除该产品？')) { pr.items.splice(i, 1); markDirty(); renderProducts(); } }));
-      head.appendChild(acts);
-      c.appendChild(head);
-
-      const g = document.createElement('div');
-      g.className = 'grid2';
-      g.appendChild(field('产品名称', p, 'name'));
-      g.appendChild(field('标签徽章', p, 'badge', { placeholder: '如 入门级' }));
-      c.appendChild(g);
-      c.appendChild(field('描述', p, 'desc', { textarea: true, rows: 2 }));
-
-      // tags 以逗号分隔
-      const tagRow = field('标签（逗号分隔）', { v: (p.tags || []).join(', ') }, 'v', {
-        placeholder: '灰纸板, 卡纸, 小批量',
-        onInput: (val) => { p.tags = val.split(/[,，]/).map((s) => s.trim()).filter(Boolean); },
-      });
-      c.appendChild(tagRow);
-
-      // 选型匹配标签
-      const matchRow = field('选型匹配（逗号分隔，用于智能选型推荐）', { v: (p.match || []).join(', ') }, 'v', {
-        placeholder: 'thin, medium, thick, custom, small, large',
-        hint: '厚度: thin(薄) medium(中) thick(厚) custom(超厚)；规模: small large',
-        onInput: (val) => { p.match = val.split(/[,，]/).map((s) => s.trim()).filter(Boolean); },
-      });
-      c.appendChild(matchRow);
-
-      // 媒体
-      const mediaWrap = document.createElement('div');
-      mediaWrap.className = 'row';
-      mediaWrap.innerHTML = '<label class="lbl">图片 / 视频（第一个作为封面）</label>';
-      const list = document.createElement('div');
-      list.className = 'media-list';
-      p.media = p.media || [];
-      p.media.forEach((m, mi) => {
-        const th = document.createElement('div');
-        th.className = 'media-thumb';
-        th.innerHTML =
-          (m.type === 'video'
-            ? '<video src="' + esc(m.src) + '" muted></video><span class="mt-type">视频</span>'
-            : '<img src="' + esc(m.src) + '"><span class="mt-type">图片</span>') +
-          '';
-        const del = document.createElement('div');
-        del.className = 'mt-del';
-        del.textContent = '✕';
-        del.addEventListener('click', () => { p.media.splice(mi, 1); markDirty(); renderProducts(); });
-        th.appendChild(del);
-        list.appendChild(th);
-      });
-      mediaWrap.appendChild(list);
-      const upLabel = document.createElement('label');
-      upLabel.className = 'btn ghost';
-      upLabel.textContent = '+ 上传图片/视频';
-      const fi = document.createElement('input');
-      fi.type = 'file';
-      fi.accept = 'image/*,video/*';
-      fi.className = 'hidden';
-      fi.addEventListener('change', async () => {
-        if (!fi.files[0]) return;
-        upLabel.textContent = '上传中...';
-        try {
-          const r = await uploadFile(fi.files[0]);
-          p.media.push({ type: r.type, src: r.url, alt: p.name || '' });
-          markDirty();
-          renderProducts();
-        } catch (e) {
-          toast(e.message, 'bad');
-        }
-        upLabel.textContent = '+ 上传图片/视频';
-      });
-      upLabel.appendChild(fi);
-      mediaWrap.appendChild(upLabel);
-      c.appendChild(mediaWrap);
+    const mkGroup = (title, key, addLabel, def, fieldsFn) => {
+      const c = card(title); w[key] = w[key] || [];
+      renderList(c, w[key], { label: (x, i) => '#' + (i + 1), rerender: renderWizard, addLabel, makeDefault: def, fields: fieldsFn });
       sec.appendChild(c);
+    };
+    mkGroup('步骤1 · 材料', 'materials', '+ 添加材料', () => ({ key: 'new', icon: '📦', name: '', desc: '' }), (x, host) => {
+      const g = document.createElement('div'); g.className = 'grid2'; g.appendChild(field('标识key', x, 'key')); g.appendChild(field('图标', x, 'icon'));
+      host.appendChild(g); host.appendChild(field('名称', x, 'name')); host.appendChild(field('说明', x, 'desc'));
     });
+    mkGroup('步骤2 · 厚度', 'thickness', '+ 添加厚度', () => ({ key: 'thin', icon: '📐', title: '', desc: '' }), (x, host) => {
+      const g = document.createElement('div'); g.className = 'grid3';
+      g.appendChild(field('标识key', x, 'key', { hint: 'thin/medium/thick/custom' })); g.appendChild(field('图标', x, 'icon')); g.appendChild(field('标题', x, 'title'));
+      host.appendChild(g); host.appendChild(field('说明', x, 'desc'));
+    });
+    mkGroup('步骤3 · 产量规模', 'scale', '+ 添加规模', () => ({ key: 'small', icon: '1️⃣', title: '', desc: '' }), (x, host) => {
+      const g = document.createElement('div'); g.className = 'grid3';
+      g.appendChild(field('标识key', x, 'key', { hint: 'small/medium/large' })); g.appendChild(field('图标', x, 'icon')); g.appendChild(field('标题', x, 'title'));
+      host.appendChild(g); host.appendChild(field('说明', x, 'desc'));
+    });
+    mkGroup('步骤4 · 特殊功能', 'features', '+ 添加功能', () => ({ key: 'new', label: '' }), (x, host) => {
+      const g = document.createElement('div'); g.className = 'grid2'; g.appendChild(field('标识key', x, 'key')); g.appendChild(field('文字', x, 'label')); host.appendChild(g);
+    });
+  }
 
-    const add = document.createElement('button');
-    add.className = 'add-btn';
-    add.type = 'button';
-    add.textContent = '+ 添加产品';
-    add.addEventListener('click', () => {
-      pr.items.push({ id: 'p' + Date.now(), name: '新产品', badge: '', desc: '', tags: [], match: [], media: [] });
-      markDirty();
-      renderProducts();
+  function renderProducts() {
+    const sec = $('#secProducts'); sec.innerHTML = '';
+    const l = L(); l.productsSection = l.productsSection || {}; l.products = l.products || [];
+    const c1 = card('【' + lang + '】板块文案');
+    c1.appendChild(field('标签', l.productsSection, 'tag'));
+    c1.appendChild(field('标题', l.productsSection, 'title', { textarea: true, rows: 2, hint: '换行用回车，*星号*高亮' }));
+    c1.appendChild(field('副标题', l.productsSection, 'subtitle'));
+    sec.appendChild(c1);
+
+    l.products.forEach((p, i) => {
+      const c = card('');
+      const head = document.createElement('div'); head.className = 'li-head';
+      const title = document.createElement('span'); title.className = 'li-title prod-collapse'; title.textContent = '📦 ' + (p.name || '产品') + ' （点击展开/收起）';
+      head.appendChild(title);
+      const acts = document.createElement('div'); acts.className = 'li-actions';
+      acts.appendChild(iconBtn('↑', '', () => moveItem(l.products, i, -1, renderProducts)));
+      acts.appendChild(iconBtn('↓', '', () => moveItem(l.products, i, 1, renderProducts)));
+      acts.appendChild(iconBtn('✕', 'del', () => { if (confirm('删除该产品？')) { l.products.splice(i, 1); markDirty(); renderProducts(); } }));
+      head.appendChild(acts); c.appendChild(head);
+
+      const body = document.createElement('div'); body.className = 'prod-body';
+      if (p._collapsed) body.style.display = 'none';
+      title.addEventListener('click', () => { p._collapsed = !p._collapsed; body.style.display = p._collapsed ? 'none' : ''; });
+
+      const g1 = document.createElement('div'); g1.className = 'grid2';
+      g1.appendChild(field('产品名称', p, 'name')); g1.appendChild(field('网址标识 slug', p, 'slug', { placeholder: 'manual' }));
+      body.appendChild(g1);
+      const g2 = document.createElement('div'); g2.className = 'grid2';
+      g2.appendChild(field('徽章文字', p, 'badge', { placeholder: '入门级' }));
+      g2.appendChild(field('徽章样式class', p, 'badgeClass', { placeholder: 'entry/pro/expert/highend/portable/industrial' }));
+      body.appendChild(g2);
+      body.appendChild(field('副标题（详情页）', p, 'subtitle', { textarea: true, rows: 2 }));
+      body.appendChild(field('首页卡片描述', p, 'cardDesc', { textarea: true, rows: 2 }));
+      const g3 = document.createElement('div'); g3.className = 'grid2';
+      g3.appendChild(csvField('首页卡片标签(逗号)', p, 'cardTags'));
+      g3.appendChild(csvField('选型匹配(逗号)', p, 'match', { hint: 'thin/medium/thick/custom, small/large' }));
+      body.appendChild(g3);
+
+      // 封面图（卡片）
+      const coverRow = document.createElement('div'); coverRow.className = 'row';
+      coverRow.innerHTML = '<label class="lbl">首页卡片封面图 URL</label>';
+      coverRow.appendChild(field('', p, 'cardImage', { placeholder: '/uploads/xxx.jpg 或图片直链' }));
+      const coverUp = document.createElement('label'); coverUp.className = 'btn ghost'; coverUp.textContent = '上传封面图';
+      const cfi = document.createElement('input'); cfi.type = 'file'; cfi.accept = 'image/*'; cfi.className = 'hidden';
+      cfi.addEventListener('change', async () => { if (!cfi.files[0]) return; coverUp.textContent = '上传中...'; try { const r = await uploadFile(cfi.files[0]); p.cardImage = r.url; markDirty(); renderProducts(); } catch (e) { toast(e.message, 'bad'); } });
+      coverUp.appendChild(cfi); coverRow.appendChild(coverUp); body.appendChild(coverRow);
+
+      // 价格
+      p.price = p.price || {};
+      const pc = document.createElement('div'); pc.innerHTML = '<label class="lbl">价格</label>';
+      const pg = document.createElement('div'); pg.className = 'grid3';
+      pg.appendChild(field('主价格', p.price, 'main', { placeholder: '¥8,800' }));
+      pg.appendChild(field('后缀', p.price, 'cny', { placeholder: '起' }));
+      pg.appendChild(field('副价格', p.price, 'usd', { placeholder: '约 $1,210 USD' }));
+      pc.appendChild(pg);
+      const pg2 = document.createElement('div'); pg2.className = 'grid2';
+      pg2.appendChild(field('价格标签', p.price, 'label', { placeholder: '参考价格' }));
+      pg2.appendChild(field('价格备注', p.price, 'note'));
+      pc.appendChild(pg2); body.appendChild(pc);
+
+      const g4 = document.createElement('div'); g4.className = 'grid2';
+      g4.appendChild(field('主按钮文字', p, 'ctaPrimary')); g4.appendChild(field('次按钮文字', p, 'ctaSecondary'));
+      body.appendChild(g4);
+
+      // 交付标签
+      const dc = document.createElement('div'); dc.innerHTML = '<label class="lbl">交付标签</label>'; p.delivery = p.delivery || [];
+      renderList(dc, p.delivery, { label: (x, i) => '标签 ' + (i + 1), rerender: renderProducts, addLabel: '+ 交付标签', makeDefault: () => ({ text: '', green: false }), fields: (x, host) => {
+        const g = document.createElement('div'); g.className = 'grid2'; g.appendChild(field('文字', x, 'text', { placeholder: '✅ 现货供应' }));
+        g.appendChild(field('高亮绿色', x, 'green', { select: true, options: [{ value: 'false', label: '否' }, { value: 'true', label: '是' }], onInput: (v) => { x.green = v === 'true'; } })); host.appendChild(g);
+      } }); body.appendChild(dc);
+
+      // 信任徽章
+      const tc = document.createElement('div'); tc.className = 'row'; tc.innerHTML = '<label class="lbl">信任徽章</label>';
+      tc.appendChild(csvField('（逗号分隔）', p, 'trustBadges', { placeholder: '✅ CE认证, 💯 30天退货' })); body.appendChild(tc);
+
+      // 卖点/优势 benefits
+      const bc = document.createElement('div'); bc.innerHTML = '<label class="lbl">核心优势（图标+文字）</label>'; p.benefits = p.benefits || [];
+      renderList(bc, p.benefits, { label: (x, i) => '优势 ' + (i + 1), rerender: renderProducts, addLabel: '+ 优势', makeDefault: () => ({ icon: '🎯', text: '' }), fields: (x, host) => {
+        const g = document.createElement('div'); g.className = 'grid2'; g.appendChild(field('图标', x, 'icon')); g.appendChild(field('文字', x, 'text')); host.appendChild(g);
+      } }); body.appendChild(bc);
+
+      // 亮点
+      body.appendChild(field('亮点标题', p, 'highlightsTitle', { placeholder: '🔥 核心亮点' }));
+      body.appendChild(field('产品亮点（每行一条）', { v: (p.highlights || []).join('\n') }, 'v', { textarea: true, rows: 4, onInput: (val) => { p.highlights = val.split('\n').map((s) => s.trim()).filter(Boolean); } }));
+
+      // 参数
+      body.appendChild(field('参数标题', p, 'specsTitle', { placeholder: '📋 技术规格' }));
+      const spc = document.createElement('div'); spc.innerHTML = '<label class="lbl">技术参数</label>'; p.specs = p.specs || [];
+      renderList(spc, p.specs, { label: (x, i) => '参数 ' + (i + 1), rerender: renderProducts, addLabel: '+ 参数', makeDefault: () => ({ k: '', v: '' }), fields: (x, host) => {
+        const g = document.createElement('div'); g.className = 'grid2'; g.appendChild(field('名称', x, 'k')); g.appendChild(field('值', x, 'v')); host.appendChild(g);
+      } }); body.appendChild(spc);
+
+      // 相关推荐
+      body.appendChild(field('相关推荐标题', p, 'relatedTitle'));
+      const rc = document.createElement('div'); rc.innerHTML = '<label class="lbl">相关产品（slug 对应其它产品的网址标识）</label>'; p.related = p.related || [];
+      renderList(rc, p.related, { label: (x, i) => '推荐 ' + (i + 1), rerender: renderProducts, addLabel: '+ 相关产品', makeDefault: () => ({ slug: '', name: '', note: '' }), fields: (x, host) => {
+        const g = document.createElement('div'); g.className = 'grid3'; g.appendChild(field('slug', x, 'slug')); g.appendChild(field('名称', x, 'name')); g.appendChild(field('备注', x, 'note')); host.appendChild(g);
+      } }); body.appendChild(rc);
+
+      // 图集
+      const gc = document.createElement('div'); gc.className = 'row'; gc.innerHTML = '<label class="lbl">详情页图集（图片/视频，第一个为主图）</label>';
+      p.gallery = p.gallery || [];
+      mediaEditor(gc, p.gallery, renderProducts, 'image/*,video/*'); body.appendChild(gc);
+
+      c.appendChild(body); sec.appendChild(c);
     });
+    const add = document.createElement('button'); add.className = 'add-btn'; add.type = 'button'; add.textContent = '+ 添加产品';
+    add.addEventListener('click', () => { l.products.push({ id: 'p' + Date.now(), slug: 'p' + Date.now(), name: '新产品', badge: '', gallery: [], specs: [], benefits: [], delivery: [], highlights: [], related: [], cardTags: [], match: [], price: {} }); markDirty(); renderProducts(); });
     sec.appendChild(add);
   }
 
-  // ---------- 联系与页脚 ----------
   function renderContact() {
-    const sec = $('#secContact');
-    sec.innerHTML = '';
-    data.contact = data.contact || {};
-    data.footer = data.footer || {};
-    const c = data.contact;
-    const c1 = card('行动号召（CTA）');
-    c1.appendChild(field('标签', c, 'tag'));
-    c1.appendChild(field('标题', c, 'title', { hint: '第一个空格之后的文字会高亮' }));
-    c1.appendChild(field('副标题', c, 'subtitle', { textarea: true, rows: 2 }));
-    c1.appendChild(field('按钮文字', c, 'ctaText'));
+    const sec = $('#secContact'); sec.innerHTML = '';
+    const l = L(); l.contact = l.contact || {};
+    const c = l.contact;
+    const c1 = card('【' + lang + '】页面文案');
+    c1.appendChild(field('标签', c, 'tag')); c1.appendChild(field('标题', c, 'title')); c1.appendChild(field('副标题', c, 'subtitle', { textarea: true, rows: 2 }));
     sec.appendChild(c1);
 
-    const c2 = card('联系方式');
-    const g = document.createElement('div');
-    g.className = 'grid2';
-    g.appendChild(field('电话', c, 'phone'));
-    g.appendChild(field('邮箱', c, 'email'));
-    c2.appendChild(g);
-    c2.appendChild(field('微信', c, 'wechat'));
-    sec.appendChild(c2);
+    const c2 = card('联系方式'); c.methods = c.methods || [];
+    renderList(c2, c.methods, { label: (x, i) => '方式 ' + (i + 1), rerender: renderContact, addLabel: '+ 联系方式', makeDefault: () => ({ icon: '📧', label: '', value: '' }), fields: (x, host) => {
+      const g = document.createElement('div'); g.className = 'grid3'; g.appendChild(field('图标', x, 'icon')); g.appendChild(field('标签', x, 'label')); g.appendChild(field('内容', x, 'value')); host.appendChild(g);
+    } }); sec.appendChild(c2);
 
-    const c3 = card('页脚');
-    c3.appendChild(field('版权信息', data.footer, 'copyright'));
-    sec.appendChild(c3);
+    const c3 = card('全球经销商 / 代理商');
+    c3.appendChild(field('板块标题', c, 'distributorsTitle')); c.distributors = c.distributors || [];
+    renderList(c3, c.distributors, { label: (x, i) => (x.flag || '') + ' ' + (x.name || '经销商'), rerender: renderContact, addLabel: '+ 经销商', makeDefault: () => ({ flag: '🌏', name: '', region: '', desc: '', contact: '' }), fields: (x, host) => {
+      const g = document.createElement('div'); g.className = 'grid3'; g.appendChild(field('国旗', x, 'flag')); g.appendChild(field('名称', x, 'name')); g.appendChild(field('地区', x, 'region'));
+      host.appendChild(g); host.appendChild(field('描述', x, 'desc')); host.appendChild(field('联系方式', x, 'contact'));
+    } }); sec.appendChild(c3);
+
+    const c4 = card('代理招募'); c.agent = c.agent || {};
+    c4.appendChild(field('标题', c.agent, 'title')); c4.appendChild(field('描述', c.agent, 'desc', { textarea: true, rows: 2 }));
+    const g = document.createElement('div'); g.className = 'grid2'; g.appendChild(field('主按钮', c.agent, 'primaryBtn')); g.appendChild(field('次按钮', c.agent, 'secondaryBtn')); c4.appendChild(g);
+    sec.appendChild(c4);
+
+    const c5 = card('询价表单');
+    c5.appendChild(field('表单标题', c, 'formTitle'));
+    c5.appendChild(field('字段占位符（每行一个：姓名/邮箱/公司/留言）', { v: (c.formFields || []).join('\n') }, 'v', { textarea: true, rows: 4, onInput: (val) => { c.formFields = val.split('\n').map((s) => s.trim()).filter(Boolean); } }));
+    c5.appendChild(field('提交按钮文字', c, 'submitText'));
+    sec.appendChild(c5);
   }
 
-  // ---------- 在线客服 ----------
   function renderChat() {
-    const sec = $('#secChat');
-    sec.innerHTML = '';
-    data.chat = data.chat || {};
-    const ch = data.chat;
-    const c1 = card('客服信息');
-    const g = document.createElement('div');
-    g.className = 'grid2';
-    g.appendChild(field('客服名称', ch, 'agentName'));
-    g.appendChild(field('头像文字（1 字）', ch, 'avatar', { placeholder: '李' }));
+    const sec = $('#secChat'); sec.innerHTML = '';
+    const l = L(); l.chat = l.chat || {};
+    const ch = l.chat;
+    const c1 = card('【' + lang + '】客服信息');
+    const g = document.createElement('div'); g.className = 'grid2'; g.appendChild(field('客服名称', ch, 'agentName')); g.appendChild(field('头像文字', ch, 'avatar'));
     c1.appendChild(g);
-    c1.appendChild(field('状态文字', ch, 'status', { placeholder: '在线 · 通常1分钟内回复' }));
+    c1.appendChild(field('状态文字', ch, 'status'));
     c1.appendChild(field('欢迎语', ch, 'greeting', { textarea: true, rows: 2 }));
     c1.appendChild(field('兜底回复（无匹配时）', ch, 'fallback', { textarea: true, rows: 2 }));
     sec.appendChild(c1);
-
-    const c2 = card('快捷问题');
-    ch.quickChips = ch.quickChips || [];
+    const c2 = card('快捷问题'); ch.quickChips = ch.quickChips || [];
     ch.quickChips.forEach((q, i) => {
-      const item = document.createElement('div');
-      item.className = 'list-item';
-      item.style.display = 'flex';
-      item.style.gap = '0.5rem';
-      item.style.alignItems = 'center';
-      const f = field('', { v: q }, 'v', { onInput: (val) => { ch.quickChips[i] = val; } });
-      f.style.flex = '1';
-      f.style.margin = '0';
-      item.appendChild(f);
-      item.appendChild(iconBtn('✕', 'del', () => { ch.quickChips.splice(i, 1); markDirty(); renderChat(); }));
-      c2.appendChild(item);
+      const it = document.createElement('div'); it.className = 'list-item'; it.style.cssText = 'display:flex;gap:0.5rem;align-items:center';
+      const f = field('', { v: q }, 'v', { onInput: (val) => { ch.quickChips[i] = val; } }); f.style.cssText = 'flex:1;margin:0'; it.appendChild(f);
+      it.appendChild(iconBtn('✕', 'del', () => { ch.quickChips.splice(i, 1); markDirty(); renderChat(); })); c2.appendChild(it);
     });
-    const addChip = document.createElement('button');
-    addChip.className = 'add-btn';
-    addChip.type = 'button';
-    addChip.textContent = '+ 添加快捷问题';
-    addChip.addEventListener('click', () => { ch.quickChips.push('新问题'); markDirty(); renderChat(); });
-    c2.appendChild(addChip);
+    const addChip = document.createElement('button'); addChip.className = 'add-btn'; addChip.type = 'button'; addChip.textContent = '+ 快捷问题';
+    addChip.addEventListener('click', () => { ch.quickChips.push('新问题'); markDirty(); renderChat(); }); c2.appendChild(addChip);
     sec.appendChild(c2);
 
-    const c3 = card('自动回复规则');
-    const hint = document.createElement('div');
-    hint.className = 'hint';
-    hint.textContent = '当用户消息包含任一关键词时，回复对应内容；都不匹配则用兜底回复。';
-    c3.appendChild(hint);
-    ch.replies = ch.replies || [];
-    ch.replies.forEach((r, i) => {
-      const item = document.createElement('div');
-      item.className = 'list-item';
-      const head = document.createElement('div');
-      head.className = 'li-head';
-      head.innerHTML = '<span class="li-title">规则 ' + (i + 1) + '</span>';
-      const acts = document.createElement('div');
-      acts.className = 'li-actions';
-      acts.appendChild(iconBtn('✕', 'del', () => { ch.replies.splice(i, 1); markDirty(); renderChat(); }));
-      head.appendChild(acts);
-      item.appendChild(head);
-      item.appendChild(field('关键词（逗号分隔）', { v: (r.keywords || []).join(', ') }, 'v', {
-        onInput: (val) => { r.keywords = val.split(/[,，]/).map((s) => s.trim()).filter(Boolean); },
-      }));
-      item.appendChild(field('回复内容', r, 'text', { textarea: true, rows: 2 }));
-      c3.appendChild(item);
-    });
-    const addRule = document.createElement('button');
-    addRule.className = 'add-btn';
-    addRule.type = 'button';
-    addRule.textContent = '+ 添加回复规则';
-    addRule.addEventListener('click', () => { ch.replies.push({ keywords: [], text: '' }); markDirty(); renderChat(); });
-    c3.appendChild(addRule);
-    sec.appendChild(c3);
+    const c3 = card('自动回复规则'); hint(c3, '用户消息包含任一关键词即回复对应内容；都不匹配用兜底回复'); ch.replies = ch.replies || [];
+    renderList(c3, ch.replies, { label: (x, i) => '规则 ' + (i + 1), rerender: renderChat, addLabel: '+ 回复规则', makeDefault: () => ({ keywords: [], text: '' }), fields: (x, host) => {
+      host.appendChild(csvField('关键词（逗号）', x, 'keywords')); host.appendChild(field('回复内容', x, 'text', { textarea: true, rows: 2 }));
+    } }); sec.appendChild(c3);
   }
 
-  // ---------- 账号安全 ----------
   function renderAccount() {
-    const sec = $('#secAccount');
-    sec.innerHTML = '';
+    const sec = $('#secAccount'); sec.innerHTML = '';
     const c = card('修改登录密码');
-    const cur = field('当前密码', {}, 'current', { type: 'password' });
-    const n1 = field('新密码（至少 6 位）', {}, 'next', { type: 'password' });
-    const n2 = field('确认新密码', {}, 'confirm', { type: 'password' });
-    c.appendChild(cur);
-    c.appendChild(n1);
-    c.appendChild(n2);
-    const btn = document.createElement('button');
-    btn.className = 'btn';
-    btn.textContent = '更新密码';
+    const cur = field('当前密码', {}, 'x', { type: 'password' });
+    const n1 = field('新密码（至少 6 位）', {}, 'x', { type: 'password' });
+    const n2 = field('确认新密码', {}, 'x', { type: 'password' });
+    c.appendChild(cur); c.appendChild(n1); c.appendChild(n2);
+    const btn = document.createElement('button'); btn.className = 'btn'; btn.textContent = '更新密码';
     btn.addEventListener('click', async () => {
-      const current = $('input', cur).value;
-      const next = $('input', n1).value;
-      const confirmVal = $('input', n2).value;
-      if (next !== confirmVal) return toast('两次输入的新密码不一致', 'bad');
-      try {
-        const res = await fetch('/api/password', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ current, next }),
-        });
-        const j = await res.json();
-        if (!res.ok) throw new Error(j.error || '修改失败');
-        toast('密码已更新', 'ok');
-        $('input', cur).value = '';
-        $('input', n1).value = '';
-        $('input', n2).value = '';
-      } catch (e) {
-        toast(e.message, 'bad');
-      }
+      const current = $('input', cur).value, next = $('input', n1).value, confirmVal = $('input', n2).value;
+      if (next !== confirmVal) return toast('两次新密码不一致', 'bad');
+      try { const res = await fetch('/api/password', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ current, next }) }); const j = await res.json(); if (!res.ok) throw new Error(j.error || '修改失败'); toast('密码已更新', 'ok'); $('input', cur).value = ''; $('input', n1).value = ''; $('input', n2).value = ''; } catch (e) { toast(e.message, 'bad'); }
     });
-    c.appendChild(btn);
-    sec.appendChild(c);
+    c.appendChild(btn); sec.appendChild(c);
   }
 
-  function moveItem(arr, i, dir, rerender) {
-    const j = i + dir;
-    if (j < 0 || j >= arr.length) return;
-    const tmp = arr[i];
-    arr[i] = arr[j];
-    arr[j] = tmp;
-    markDirty();
-    rerender();
+  const RENDERERS = { brand: renderBrand, hero: renderHero, wizard: renderWizard, products: renderProducts, contact: renderContact, chat: renderChat, account: renderAccount };
+  function renderSection(sec) { if (RENDERERS[sec]) RENDERERS[sec](); }
+
+  function renderLangTabs() {
+    const host = $('#langTabs'); host.innerHTML = '';
+    (data.langs || []).forEach((lg) => {
+      const b = document.createElement('button'); b.className = 'lang-tab' + (lg.code === lang ? ' active' : ''); b.textContent = lg.label || lg.code;
+      b.addEventListener('click', () => { lang = lg.code; renderLangTabs(); renderSection(currentSec); });
+      host.appendChild(b);
+    });
   }
 
-  function renderAll() {
-    renderBrand();
-    renderHero();
-    renderAdv();
-    renderProducts();
-    renderContact();
-    renderChat();
-    renderAccount();
-  }
-
-  // ---------- 导航切换 ----------
   function switchSection(sec) {
+    currentSec = sec;
     $$('.menu-item').forEach((m) => m.classList.toggle('active', m.dataset.sec === sec));
     $$('.section').forEach((s) => s.classList.toggle('active', s.dataset.sec === sec));
     $('#secTitle').textContent = SEC_TITLES[sec] || '';
+    $('#langTabs').style.display = sec === 'account' ? 'none' : '';
+    renderSection(sec);
   }
 
-  // ---------- 保存 ----------
   async function save() {
-    const btn = $('#saveBtn');
-    btn.textContent = '保存中...';
-    btn.disabled = true;
+    const btn = $('#saveBtn'); btn.textContent = '保存中...'; btn.disabled = true;
     try {
-      const res = await fetch('/api/content', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(data),
-      });
+      // 清除临时字段
+      const clone = JSON.parse(JSON.stringify(data));
+      Object.values(clone.i18n || {}).forEach((L) => (L.products || []).forEach((p) => { delete p._collapsed; delete p.breadcrumb; }));
+      const res = await fetch('/api/content', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(clone) });
       if (res.status === 401) { showLogin(); throw new Error('登录已过期，请重新登录'); }
       if (!res.ok) throw new Error('保存失败');
-      markClean();
-      toast('已保存全部修改', 'ok');
-    } catch (e) {
-      toast(e.message, 'bad');
-    }
-    btn.textContent = '保存全部修改';
-    btn.disabled = false;
+      markClean(); toast('已保存全部修改', 'ok');
+    } catch (e) { toast(e.message, 'bad'); }
+    btn.textContent = '保存全部修改'; btn.disabled = false;
   }
 
-  // ---------- 登录 / 会话 ----------
-  function showLogin() {
-    $('#loginView').classList.remove('hidden');
-    $('#appView').classList.add('hidden');
-  }
-  function showApp() {
-    $('#loginView').classList.add('hidden');
-    $('#appView').classList.remove('hidden');
-  }
+  function showLogin() { $('#loginView').classList.remove('hidden'); $('#appView').classList.add('hidden'); }
+  function showApp() { $('#loginView').classList.add('hidden'); $('#appView').classList.remove('hidden'); }
 
   async function loadContent() {
-    const res = await fetch('/api/content');
-    data = await res.json();
+    const res = await fetch('/api/content'); data = await res.json();
     if (!data || typeof data !== 'object') data = {};
-    renderAll();
-    switchSection('brand');
-    markClean();
+    data.langs = data.langs || [{ code: 'zh', label: '中文', dir: 'ltr' }];
+    lang = data.defaultLang || (data.langs[0] && data.langs[0].code) || 'zh';
+    renderLangTabs(); switchSection('brand'); markClean();
   }
 
   function bindGlobal() {
     $$('.menu-item').forEach((m) => m.addEventListener('click', () => switchSection(m.dataset.sec)));
     $('#saveBtn').addEventListener('click', save);
-    $('#logoutBtn').addEventListener('click', async () => {
-      await fetch('/api/logout', { method: 'POST' });
-      showLogin();
-    });
+    $('#logoutBtn').addEventListener('click', async () => { await fetch('/api/logout', { method: 'POST' }); showLogin(); });
     $('#loginForm').addEventListener('submit', async (e) => {
-      e.preventDefault();
-      $('#loginErr').textContent = '';
-      try {
-        const res = await fetch('/api/login', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ username: $('#loginUser').value, password: $('#loginPass').value }),
-        });
-        const j = await res.json();
-        if (!res.ok) throw new Error(j.error || '登录失败');
-        showApp();
-        await loadContent();
-      } catch (err) {
-        $('#loginErr').textContent = err.message;
-      }
+      e.preventDefault(); $('#loginErr').textContent = '';
+      try { const res = await fetch('/api/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username: $('#loginUser').value, password: $('#loginPass').value }) }); const j = await res.json(); if (!res.ok) throw new Error(j.error || '登录失败'); showApp(); await loadContent(); } catch (err) { $('#loginErr').textContent = err.message; }
     });
-    document.addEventListener('keydown', (e) => {
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 's') {
-        e.preventDefault();
-        if (!$('#appView').classList.contains('hidden')) save();
-      }
-    });
-    window.addEventListener('beforeunload', (e) => {
-      if (dirty) { e.preventDefault(); e.returnValue = ''; }
-    });
+    document.addEventListener('keydown', (e) => { if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 's') { e.preventDefault(); if (!$('#appView').classList.contains('hidden')) save(); } });
+    window.addEventListener('beforeunload', (e) => { if (dirty) { e.preventDefault(); e.returnValue = ''; } });
   }
 
   async function boot() {
     bindGlobal();
-    try {
-      const res = await fetch('/api/session');
-      const j = await res.json();
-      if (j.authed) {
-        showApp();
-        await loadContent();
-      } else {
-        showLogin();
-      }
-    } catch (e) {
-      showLogin();
-    }
+    try { const res = await fetch('/api/session'); const j = await res.json(); if (j.authed) { showApp(); await loadContent(); } else showLogin(); } catch (e) { showLogin(); }
   }
-
   boot();
 })();
