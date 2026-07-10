@@ -177,6 +177,42 @@ app.post('/api/upload', requireAuth, (req, res) => {
   });
 });
 
+// ---------- 媒体库 ----------
+app.get('/api/uploads', requireAuth, (req, res) => {
+  let files = [];
+  try {
+    files = fs.readdirSync(UPLOAD_DIR)
+      .filter((f) => !f.startsWith('.'))
+      .map((f) => {
+        const st = fs.statSync(path.join(UPLOAD_DIR, f));
+        const ext = path.extname(f).toLowerCase();
+        return {
+          name: f,
+          url: '/uploads/' + f,
+          type: /\.(mp4|webm|mov)$/i.test(ext) ? 'video' : 'image',
+          size: st.size,
+          mtime: st.mtimeMs,
+        };
+      })
+      .sort((a, b) => b.mtime - a.mtime);
+  } catch (e) { /* 目录不存在时返回空 */ }
+  res.json({ files });
+});
+
+app.delete('/api/uploads', requireAuth, (req, res) => {
+  const name = req.body && req.body.name;
+  if (!name || name.indexOf('/') > -1 || name.indexOf('..') > -1) {
+    return res.status(400).json({ error: '非法文件名' });
+  }
+  const p = path.join(UPLOAD_DIR, name);
+  try {
+    if (fs.existsSync(p)) fs.unlinkSync(p);
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: '删除失败' });
+  }
+});
+
 // ---------- 静态资源 ----------
 app.use('/admin', express.static(path.join(__dirname, 'admin')));
 app.use(express.static(path.join(__dirname, 'public')));

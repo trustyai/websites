@@ -8,7 +8,11 @@
   let currentSec = 'brand';
   let dirty = false;
 
-  const SEC_TITLES = { brand: '品牌与导航', hero: '首页文案', wizard: '智能选型', products: '产品管理', contact: '联系页', chat: '在线客服', account: '账号安全' };
+  const SEC_TITLES = { brand: '品牌与导航', hero: '首页文案', wizard: '智能选型', products: '产品管理', contact: '联系页', chat: '在线客服', media: '媒体库', tools: '翻译与备份', account: '账号安全' };
+
+  function langPrefix(code) { return code === (data.defaultLang || 'zh') ? '' : '/' + code; }
+  function updatePreview() { const a = $('#previewBtn'); if (a) a.href = (langPrefix(lang) || '/') + (langPrefix(lang) ? '/' : ''); }
+  function deepClone(o) { return JSON.parse(JSON.stringify(o || {})); }
 
   function L() { data.i18n = data.i18n || {}; data.i18n[lang] = data.i18n[lang] || {}; return data.i18n[lang]; }
   function esc(s) { const d = document.createElement('div'); d.textContent = s == null ? '' : String(s); return d.innerHTML; }
@@ -112,7 +116,9 @@
     const up = document.createElement('label'); up.className = 'btn ghost'; up.textContent = '上传 Logo';
     const fi = document.createElement('input'); fi.type = 'file'; fi.accept = 'image/*'; fi.className = 'hidden';
     fi.addEventListener('change', async () => { if (!fi.files[0]) return; up.textContent = '上传中...'; try { const r = await uploadFile(fi.files[0]); data.brand.logo = r.url; markDirty(); renderBrand(); } catch (e) { toast(e.message, 'bad'); } });
-    up.appendChild(fi); flex.appendChild(prev); flex.appendChild(up); logoRow.appendChild(flex); c0.appendChild(logoRow);
+    up.appendChild(fi); flex.appendChild(prev); flex.appendChild(up);
+    flex.appendChild(pickBtn('从媒体库选', (f) => { data.brand.logo = f.url; markDirty(); renderBrand(); }));
+    logoRow.appendChild(flex); c0.appendChild(logoRow);
     c0.appendChild(field('默认语言', data, 'defaultLang', { select: true, options: (data.langs || []).map((l) => ({ value: l.code, label: l.code + ' · ' + l.label })) }));
     sec.appendChild(c0);
 
@@ -228,6 +234,7 @@
       const acts = document.createElement('div'); acts.className = 'li-actions';
       acts.appendChild(iconBtn('↑', '', () => moveItem(l.products, i, -1, renderProducts)));
       acts.appendChild(iconBtn('↓', '', () => moveItem(l.products, i, 1, renderProducts)));
+      const sync = iconBtn('🔁', '', () => syncProductMedia(p)); sync.title = '把图集/封面/价格同步到所有语言'; acts.appendChild(sync);
       acts.appendChild(iconBtn('✕', 'del', () => { if (confirm('删除该产品？')) { l.products.splice(i, 1); markDirty(); renderProducts(); } }));
       head.appendChild(acts); c.appendChild(head);
 
@@ -256,7 +263,9 @@
       const coverUp = document.createElement('label'); coverUp.className = 'btn ghost'; coverUp.textContent = '上传封面图';
       const cfi = document.createElement('input'); cfi.type = 'file'; cfi.accept = 'image/*'; cfi.className = 'hidden';
       cfi.addEventListener('change', async () => { if (!cfi.files[0]) return; coverUp.textContent = '上传中...'; try { const r = await uploadFile(cfi.files[0]); p.cardImage = r.url; markDirty(); renderProducts(); } catch (e) { toast(e.message, 'bad'); } });
-      coverUp.appendChild(cfi); coverRow.appendChild(coverUp); body.appendChild(coverRow);
+      coverUp.appendChild(cfi); coverRow.appendChild(coverUp);
+      coverRow.appendChild(pickBtn('从媒体库选', (f) => { p.cardImage = f.url; markDirty(); renderProducts(); }));
+      body.appendChild(coverRow);
 
       // 价格
       p.price = p.price || {};
@@ -313,13 +322,28 @@
       // 图集
       const gc = document.createElement('div'); gc.className = 'row'; gc.innerHTML = '<label class="lbl">详情页图集（图片/视频，第一个为主图）</label>';
       p.gallery = p.gallery || [];
-      mediaEditor(gc, p.gallery, renderProducts, 'image/*,video/*'); body.appendChild(gc);
+      mediaEditor(gc, p.gallery, renderProducts, 'image/*,video/*');
+      gc.appendChild(pickBtn('从媒体库添加', (f) => { p.gallery.push({ type: f.type, src: f.url, alt: '' }); markDirty(); renderProducts(); }));
+      body.appendChild(gc);
 
       c.appendChild(body); sec.appendChild(c);
     });
     const add = document.createElement('button'); add.className = 'add-btn'; add.type = 'button'; add.textContent = '+ 添加产品';
     add.addEventListener('click', () => { l.products.push({ id: 'p' + Date.now(), slug: 'p' + Date.now(), name: '新产品', badge: '', gallery: [], specs: [], benefits: [], delivery: [], highlights: [], related: [], cardTags: [], match: [], price: {} }); markDirty(); renderProducts(); });
     sec.appendChild(add);
+  }
+
+  function syncProductMedia(p) {
+    const key = p.slug || p.id;
+    if (!confirm('把「' + (p.name || key) + '」的图集、封面图、价格同步到其它所有语言？（各语言里 slug/id 相同的产品会被覆盖这三项）')) return;
+    let n = 0;
+    Object.keys(data.i18n || {}).forEach((code) => {
+      if (code === lang) return;
+      const arr = (data.i18n[code].products) || [];
+      const tp = arr.find((x) => (x.slug || x.id) === key);
+      if (tp) { tp.gallery = deepClone(p.gallery); tp.cardImage = p.cardImage; tp.price = deepClone(p.price); n++; }
+    });
+    markDirty(); toast('已同步到 ' + n + ' 个语言', 'ok');
   }
 
   function renderContact() {
@@ -397,14 +421,126 @@
     c.appendChild(btn); sec.appendChild(c);
   }
 
-  const RENDERERS = { brand: renderBrand, hero: renderHero, wizard: renderWizard, products: renderProducts, contact: renderContact, chat: renderChat, account: renderAccount };
+  // ============ 媒体选择器 ============
+  let uploadsCache = null;
+  async function loadUploads(force) {
+    if (uploadsCache && !force) return uploadsCache;
+    const res = await fetch('/api/uploads');
+    const j = await res.json().catch(() => ({ files: [] }));
+    uploadsCache = j.files || [];
+    return uploadsCache;
+  }
+  async function openPicker(cb) {
+    const mask = $('#picker'); const grid = $('#pickerGrid');
+    grid.innerHTML = '<div style="color:var(--muted);padding:1rem">加载中...</div>';
+    mask.classList.remove('hidden');
+    const files = await loadUploads(true);
+    if (!files.length) { grid.innerHTML = '<div style="color:var(--muted);padding:1rem">媒体库为空，请先在「媒体库」或直接上传。</div>'; return; }
+    grid.innerHTML = '';
+    files.forEach((f) => {
+      const el = document.createElement('div'); el.className = 'pk';
+      el.innerHTML = f.type === 'video' ? '<video src="' + esc(f.url) + '" muted></video>' : '<img src="' + esc(f.url) + '">';
+      el.addEventListener('click', () => { mask.classList.add('hidden'); cb(f); });
+      grid.appendChild(el);
+    });
+  }
+  function pickBtn(label, cb) { const b = document.createElement('button'); b.type = 'button'; b.className = 'btn ghost'; b.style.marginLeft = '0.4rem'; b.textContent = label; b.addEventListener('click', () => openPicker(cb)); return b; }
+
+  // ============ 媒体库 ============
+  async function renderMedia() {
+    const sec = $('#secMedia'); sec.innerHTML = '';
+    const c = card('媒体库'); hint(c, '所有上传的图片/视频。可复制链接填到产品封面，或直接删除不用的文件。');
+    const grid = document.createElement('div'); grid.className = 'media-grid';
+    grid.innerHTML = '<div style="color:var(--muted)">加载中...</div>';
+    c.appendChild(grid); sec.appendChild(c);
+    const files = await loadUploads(true);
+    if (!files.length) { grid.innerHTML = '<div style="color:var(--muted)">还没有上传任何文件。</div>'; return; }
+    grid.innerHTML = '';
+    files.forEach((f) => {
+      const cell = document.createElement('div'); cell.className = 'media-cell';
+      cell.innerHTML = '<div class="mc-thumb">' + (f.type === 'video' ? '<video src="' + esc(f.url) + '" muted></video>' : '<img src="' + esc(f.url) + '">') + '</div>' +
+        '<div class="mc-info"><div class="mc-name">' + esc(f.name) + '<br>' + (f.size / 1024 > 1024 ? (f.size / 1048576).toFixed(1) + ' MB' : Math.round(f.size / 1024) + ' KB') + '</div><div class="mc-acts"></div></div>';
+      const acts = cell.querySelector('.mc-acts');
+      const copy = document.createElement('button'); copy.textContent = '复制链接';
+      copy.addEventListener('click', () => { navigator.clipboard && navigator.clipboard.writeText(f.url); toast('已复制链接：' + f.url, 'ok'); });
+      const del = document.createElement('button'); del.className = 'del'; del.textContent = '删除';
+      del.addEventListener('click', async () => {
+        if (!confirm('删除文件 ' + f.name + '？（若产品仍在引用会显示裂图）')) return;
+        const res = await fetch('/api/uploads', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: f.name }) });
+        if (res.ok) { toast('已删除', 'ok'); renderMedia(); } else { toast('删除失败', 'bad'); }
+      });
+      acts.appendChild(copy); acts.appendChild(del); grid.appendChild(cell);
+    });
+  }
+
+  // ============ 翻译与备份 ============
+  function renderTools() {
+    const sec = $('#secTools'); sec.innerHTML = '';
+    // 添加新语言
+    const c1 = card('添加新语言');
+    hint(c1, '新增一门语言，并可选择“以某语言为模板复制内容”，省去从零开始。');
+    const tmp = { code: '', label: '', dir: 'ltr', from: data.defaultLang || 'zh' };
+    const g = document.createElement('div'); g.className = 'grid3';
+    g.appendChild(field('语言代码', tmp, 'code', { placeholder: 'fr' }));
+    g.appendChild(field('显示名称', tmp, 'label', { placeholder: 'Français' }));
+    g.appendChild(field('方向', tmp, 'dir', { select: true, options: [{ value: 'ltr', label: 'ltr 从左到右' }, { value: 'rtl', label: 'rtl 从右到左' }] }));
+    c1.appendChild(g);
+    c1.appendChild(field('内容复制自', tmp, 'from', { select: true, options: (data.langs || []).map((l) => ({ value: l.code, label: l.code + ' · ' + l.label })) }));
+    const addBtn = document.createElement('button'); addBtn.className = 'btn'; addBtn.textContent = '添加语言';
+    addBtn.addEventListener('click', () => {
+      const code = (tmp.code || '').trim();
+      if (!code) return toast('请填写语言代码', 'bad');
+      if ((data.langs || []).some((l) => l.code === code)) return toast('该语言代码已存在', 'bad');
+      data.langs.push({ code, label: tmp.label || code, dir: tmp.dir || 'ltr' });
+      data.i18n[code] = deepClone(data.i18n[tmp.from] || {});
+      markDirty(); toast('已添加语言 ' + code + '，切到该语言即可翻译', 'ok');
+      lang = code; renderLangTabs(); updatePreview(); renderTools();
+    });
+    c1.appendChild(addBtn); sec.appendChild(c1);
+
+    // 翻译助手
+    const c2 = card('翻译助手');
+    hint(c2, '把某个语言的全部内容复制到「当前正在编辑的语言（' + lang + '）」，覆盖后再逐条翻译。');
+    const t2 = { from: (data.langs[0] && data.langs[0].code) || 'zh' };
+    c2.appendChild(field('复制来源语言', t2, 'from', { select: true, options: (data.langs || []).filter((l) => l.code !== lang).map((l) => ({ value: l.code, label: l.code + ' · ' + l.label })) }));
+    const cpBtn = document.createElement('button'); cpBtn.className = 'btn'; cpBtn.textContent = '复制到当前语言（' + lang + '）';
+    cpBtn.addEventListener('click', () => {
+      if (t2.from === lang) return toast('来源与当前语言相同', 'bad');
+      if (!confirm('用 ' + t2.from + ' 的全部内容覆盖当前语言 ' + lang + '？')) return;
+      data.i18n[lang] = deepClone(data.i18n[t2.from] || {});
+      markDirty(); toast('已复制，请逐条翻译后保存', 'ok'); switchSection('brand');
+    });
+    c2.appendChild(cpBtn); sec.appendChild(c2);
+
+    // 备份与恢复
+    const c3 = card('备份与恢复');
+    hint(c3, '导出会下载当前全部内容的 JSON 备份；导入会用文件内容替换（导入后记得点“保存全部修改”）。');
+    const exp = document.createElement('button'); exp.className = 'btn ghost'; exp.textContent = '⬇ 导出内容备份';
+    exp.addEventListener('click', () => {
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+      const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
+      a.download = 'vgrooving-content-' + new Date().toISOString().slice(0, 10) + '.json'; a.click();
+    });
+    const impLabel = document.createElement('label'); impLabel.className = 'btn ghost'; impLabel.style.marginLeft = '0.5rem'; impLabel.textContent = '⬆ 导入内容';
+    const impFi = document.createElement('input'); impFi.type = 'file'; impFi.accept = 'application/json,.json'; impFi.className = 'hidden';
+    impFi.addEventListener('change', () => {
+      const f = impFi.files[0]; if (!f) return;
+      const rd = new FileReader();
+      rd.onload = () => { try { const j = JSON.parse(rd.result); if (!j.i18n) throw new Error('不是有效的内容文件'); data = j; data.langs = data.langs || []; lang = data.defaultLang || (data.langs[0] && data.langs[0].code) || 'zh'; markDirty(); renderLangTabs(); switchSection('brand'); toast('已导入，请检查后点“保存全部修改”', 'ok'); } catch (e) { toast('导入失败：' + e.message, 'bad'); } };
+      rd.readAsText(f);
+    });
+    impLabel.appendChild(impFi);
+    c3.appendChild(exp); c3.appendChild(impLabel); sec.appendChild(c3);
+  }
+
+  const RENDERERS = { brand: renderBrand, hero: renderHero, wizard: renderWizard, products: renderProducts, contact: renderContact, chat: renderChat, media: renderMedia, tools: renderTools, account: renderAccount };
   function renderSection(sec) { if (RENDERERS[sec]) RENDERERS[sec](); }
 
   function renderLangTabs() {
     const host = $('#langTabs'); host.innerHTML = '';
     (data.langs || []).forEach((lg) => {
       const b = document.createElement('button'); b.className = 'lang-tab' + (lg.code === lang ? ' active' : ''); b.textContent = lg.label || lg.code;
-      b.addEventListener('click', () => { lang = lg.code; renderLangTabs(); renderSection(currentSec); });
+      b.addEventListener('click', () => { lang = lg.code; renderLangTabs(); updatePreview(); renderSection(currentSec); });
       host.appendChild(b);
     });
   }
@@ -414,7 +550,8 @@
     $$('.menu-item').forEach((m) => m.classList.toggle('active', m.dataset.sec === sec));
     $$('.section').forEach((s) => s.classList.toggle('active', s.dataset.sec === sec));
     $('#secTitle').textContent = SEC_TITLES[sec] || '';
-    $('#langTabs').style.display = sec === 'account' ? 'none' : '';
+    $('#langTabs').style.display = (sec === 'account' || sec === 'media') ? 'none' : '';
+    updatePreview();
     renderSection(sec);
   }
 
@@ -446,6 +583,8 @@
   function bindGlobal() {
     $$('.menu-item').forEach((m) => m.addEventListener('click', () => switchSection(m.dataset.sec)));
     $('#saveBtn').addEventListener('click', save);
+    $('#pickerClose').addEventListener('click', () => $('#picker').classList.add('hidden'));
+    $('#picker').addEventListener('click', (e) => { if (e.target.id === 'picker') $('#picker').classList.add('hidden'); });
     $('#logoutBtn').addEventListener('click', async () => { await fetch('/api/logout', { method: 'POST' }); showLogin(); });
     $('#loginForm').addEventListener('submit', async (e) => {
       e.preventDefault(); $('#loginErr').textContent = '';
