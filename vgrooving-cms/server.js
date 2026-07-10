@@ -185,6 +185,20 @@ app.get('/admin', (req, res) => {
   res.sendFile(path.join(__dirname, 'admin', 'index.html'));
 });
 
+// ---------- 多语言前台路由（语言由前端 JS 从 URL 解析）----------
+const LANG = ':lang(en|es|ko|ar|tr)';
+const sendPublic = (file) => (req, res) => res.sendFile(path.join(__dirname, 'public', file));
+
+// 首页
+app.get(['/', '/index.html', '/' + LANG, '/' + LANG + '/', '/' + LANG + '/index.html'], sendPublic('index.html'));
+// 联系页（兼容 .html 旧链接）
+app.get(['/contact', '/contact.html', '/' + LANG + '/contact', '/' + LANG + '/contact.html'], sendPublic('contact.html'));
+// 产品详情（兼容 /products/xxx 与 /products/xxx.html）
+app.get(['/products/:slug', '/' + LANG + '/products/:slug'], sendPublic('product.html'));
+
+// ---------- 兜底：其余未匹配的非 API 地址跳回首页，避免 404 ----------
+app.get(/^\/(?!api\/).*/, (req, res) => res.redirect('/'));
+
 app.listen(PORT, () => {
   console.log('====================================');
   console.log(`  前台：  http://localhost:${PORT}`);
