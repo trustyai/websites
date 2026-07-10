@@ -85,6 +85,23 @@ textarea.inp{resize:vertical;min-height:60px;line-height:1.5}
 #toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
 #toast.ok{border-color:var(--brand)}
 #toast.bad{border-color:var(--danger)}
+.stat-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:0.9rem;margin-bottom:1.1rem}
+.stat{background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);padding:1.1rem}
+.stat .n{font-size:1.7rem;font-weight:800;color:var(--brand)}
+.stat .l{font-size:0.8rem;color:var(--muted);margin-top:0.2rem}
+.quick a,.quick button{display:inline-block;margin:0 0.4rem 0.4rem 0}
+.prog-row{display:flex;align-items:center;gap:0.6rem;margin-bottom:0.5rem;font-size:0.85rem}
+.prog-row .name{width:90px;color:var(--muted)}
+.prog-bar{flex:1;height:8px;background:var(--panel-2);border-radius:5px;overflow:hidden}
+.prog-bar i{display:block;height:100%;background:var(--brand)}
+#inboxBadge{background:var(--danger);color:#fff;border-radius:50px;font-size:0.62rem;padding:0 0.35rem;display:none}
+.lead{background:var(--panel-2);border:1px solid var(--border);border-radius:var(--radius);padding:0.9rem;margin-bottom:0.7rem}
+.lead.unread{border-left:3px solid var(--brand)}
+.lead .lh{display:flex;align-items:center;gap:0.6rem;flex-wrap:wrap;margin-bottom:0.4rem}
+.lead .lh b{font-size:0.95rem}
+.lead .lh .meta{font-size:0.75rem;color:var(--muted)}
+.lead .lh .acts{margin-left:auto;display:flex;gap:0.35rem}
+.lead .msg{font-size:0.88rem;color:var(--text);white-space:pre-wrap;line-height:1.5}
 .media-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:0.8rem}
 .media-cell{background:var(--panel-2);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden}
 .media-cell .mc-thumb{height:100px;background:#0b1118;display:flex;align-items:center;justify-content:center}
@@ -122,12 +139,14 @@ textarea.inp{resize:vertical;min-height:60px;line-height:1.5}
   <aside class="sidebar">
     <div class="brand"><img src="/assets/logo.png" alt=""><b>V槽 CMS</b></div>
     <nav class="menu" id="menu">
-      <div class="menu-item active" data-sec="brand"><span class="ico">🎨</span><span>品牌与导航</span></div>
+      <div class="menu-item active" data-sec="dashboard"><span class="ico">📊</span><span>仪表盘</span></div>
+      <div class="menu-item" data-sec="brand"><span class="ico">🎨</span><span>品牌与导航</span></div>
       <div class="menu-item" data-sec="hero"><span class="ico">🏠</span><span>首页文案</span></div>
       <div class="menu-item" data-sec="wizard"><span class="ico">🧭</span><span>智能选型</span></div>
       <div class="menu-item" data-sec="products"><span class="ico">📦</span><span>产品管理</span></div>
       <div class="menu-item" data-sec="contact"><span class="ico">📞</span><span>联系页</span></div>
       <div class="menu-item" data-sec="chat"><span class="ico">💬</span><span>在线客服</span></div>
+      <div class="menu-item" data-sec="inbox"><span class="ico">📥</span><span>收件箱 <span id="inboxBadge"></span></span></div>
       <div class="menu-item" data-sec="media"><span class="ico">🖼️</span><span>媒体库</span></div>
       <div class="menu-item" data-sec="tools"><span class="ico">🧰</span><span>翻译与备份</span></div>
       <div class="menu-item" data-sec="account"><span class="ico">🔒</span><span>账号安全</span></div>
@@ -147,12 +166,14 @@ textarea.inp{resize:vertical;min-height:60px;line-height:1.5}
       <button class="btn" id="saveBtn">保存全部修改</button>
     </div>
     <div class="content">
-      <div class="section active" data-sec="brand" id="secBrand"></div>
+      <div class="section active" data-sec="dashboard" id="secDashboard"></div>
+      <div class="section" data-sec="brand" id="secBrand"></div>
       <div class="section" data-sec="hero" id="secHero"></div>
       <div class="section" data-sec="wizard" id="secWizard"></div>
       <div class="section" data-sec="products" id="secProducts"></div>
       <div class="section" data-sec="contact" id="secContact"></div>
       <div class="section" data-sec="chat" id="secChat"></div>
+      <div class="section" data-sec="inbox" id="secInbox"></div>
       <div class="section" data-sec="media" id="secMedia"></div>
       <div class="section" data-sec="tools" id="secTools"></div>
       <div class="section" data-sec="account" id="secAccount"></div>

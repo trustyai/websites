@@ -18,5 +18,8 @@
     "cookie-parser": "^1.4.7",
     "express": "^4.19.2",
     "multer": "^2.2.0"
+  },
+  "optionalDependencies": {
+    "jimp": "^0.22.12"
   }
 }

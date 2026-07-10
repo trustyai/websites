@@ -8,7 +8,7 @@
   let currentSec = 'brand';
   let dirty = false;
 
-  const SEC_TITLES = { brand: '品牌与导航', hero: '首页文案', wizard: '智能选型', products: '产品管理', contact: '联系页', chat: '在线客服', media: '媒体库', tools: '翻译与备份', account: '账号安全' };
+  const SEC_TITLES = { dashboard: '仪表盘', brand: '品牌与导航', hero: '首页文案', wizard: '智能选型', products: '产品管理', contact: '联系页', chat: '在线客服', inbox: '收件箱', media: '媒体库', tools: '翻译与备份', account: '账号安全' };
 
   function langPrefix(code) { return code === (data.defaultLang || 'zh') ? '' : '/' + code; }
   function updatePreview() { const a = $('#previewBtn'); if (a) a.href = (langPrefix(lang) || '/') + (langPrefix(lang) ? '/' : ''); }
@@ -166,8 +166,13 @@
     c1.appendChild(field('大标题', h, 'title', { textarea: true, rows: 2, hint: '用 *星号* 包住要高亮的文字；换行用回车。例：找到*最适合*\\n你的*开槽机*' }));
     c1.appendChild(field('副标题', h, 'subtitle', { textarea: true, rows: 2 }));
     c1.appendChild(field('按钮文字', h, 'cta'));
-    c1.appendChild(field('页面标题(浏览器标签/SEO)', l.meta = l.meta || {}, 'title'));
     sec.appendChild(c1);
+    const cSeo = card('SEO（搜索引擎显示）');
+    hint(cSeo, '影响该语言首页在搜索结果/分享时显示的标题与描述');
+    l.meta = l.meta || {};
+    cSeo.appendChild(field('页面标题', l.meta, 'title'));
+    cSeo.appendChild(field('页面描述', l.meta, 'description', { textarea: true, rows: 2, placeholder: '一句话介绍，约 60-120 字，用于搜索结果摘要' }));
+    sec.appendChild(cSeo);
     const c2 = card('数据指标');
     h.stats = h.stats || [];
     renderList(c2, h.stats, {
@@ -476,6 +481,13 @@
   // ============ 翻译与备份 ============
   function renderTools() {
     const sec = $('#secTools'); sec.innerHTML = '';
+    // 站点设置
+    data.settings = data.settings || {};
+    const cs = card('站点设置（SEO 与通知）');
+    hint(cs, '网站网址用于生成 sitemap / 分享链接；通知 Webhook 填企业微信/钉钉/飞书群机器人地址，收到询价会自动推送。');
+    cs.appendChild(field('网站网址', data.settings, 'siteUrl', { placeholder: 'https://vgrooving.com' }));
+    cs.appendChild(field('通知 Webhook（可留空）', data.settings, 'notifyWebhook', { placeholder: 'https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=...' }));
+    sec.appendChild(cs);
     // 添加新语言
     const c1 = card('添加新语言');
     hint(c1, '新增一门语言，并可选择“以某语言为模板复制内容”，省去从零开始。');
@@ -533,7 +545,88 @@
     c3.appendChild(exp); c3.appendChild(impLabel); sec.appendChild(c3);
   }
 
-  const RENDERERS = { brand: renderBrand, hero: renderHero, wizard: renderWizard, products: renderProducts, contact: renderContact, chat: renderChat, media: renderMedia, tools: renderTools, account: renderAccount };
+  // ============ 仪表盘 ============
+  let leadsCache = null;
+  async function loadLeads(force) {
+    if (leadsCache && !force) return leadsCache;
+    const res = await fetch('/api/leads');
+    const j = await res.json().catch(() => ({ leads: [] }));
+    leadsCache = j.leads || [];
+    return leadsCache;
+  }
+  function updateInboxBadge() {
+    const unread = (leadsCache || []).filter((l) => !l.read).length;
+    const b = $('#inboxBadge');
+    if (b) { b.textContent = unread || ''; b.style.display = unread ? 'inline-block' : 'none'; }
+  }
+  async function renderDashboard() {
+    const sec = $('#secDashboard'); sec.innerHTML = '<div class="card" style="color:var(--muted)">加载中...</div>';
+    const langs = data.langs || [];
+    const defL = data.i18n[data.defaultLang || (langs[0] && langs[0].code)] || {};
+    const files = await loadUploads(true).catch(() => []);
+    const leads = await loadLeads(true).catch(() => []);
+    updateInboxBadge();
+    sec.innerHTML = '';
+    const unread = leads.filter((l) => !l.read).length;
+    const c1 = card('概览');
+    const g = document.createElement('div'); g.className = 'stat-grid';
+    const stat = (n, l) => '<div class="stat"><div class="n">' + n + '</div><div class="l">' + l + '</div></div>';
+    g.innerHTML = stat(langs.length, '语言') + stat((defL.products || []).length, '产品(默认语言)') + stat(files.length, '媒体文件') + stat(unread, '未读询价');
+    c1.appendChild(g);
+    const quick = document.createElement('div'); quick.className = 'quick';
+    langs.forEach((l) => { const a = document.createElement('a'); a.className = 'btn ghost'; a.target = '_blank'; a.href = (l.code === (data.defaultLang || 'zh') ? '/' : '/' + l.code); a.textContent = '🔎 ' + (l.label || l.code); quick.appendChild(a); });
+    c1.appendChild(quick);
+    sec.appendChild(c1);
+
+    // 各语言完成度（有多少产品填了图集或封面）
+    const c2 = card('各语言产品完成度');
+    hint(c2, '统计每个语言里“已配图（图集或封面）”的产品占比，帮助你发现还没翻译/配图的语言');
+    langs.forEach((l) => {
+      const ps = (data.i18n[l.code] && data.i18n[l.code].products) || [];
+      const done = ps.filter((p) => (p.gallery && p.gallery.length) || p.cardImage).length;
+      const pct = ps.length ? Math.round((done / ps.length) * 100) : 0;
+      const row = document.createElement('div'); row.className = 'prog-row';
+      row.innerHTML = '<span class="name">' + esc(l.label || l.code) + '</span><span class="prog-bar"><i style="width:' + pct + '%"></i></span><span>' + done + '/' + ps.length + '</span>';
+      c2.appendChild(row);
+    });
+    sec.appendChild(c2);
+  }
+
+  // ============ 收件箱 ============
+  async function renderInbox() {
+    const sec = $('#secInbox'); sec.innerHTML = '';
+    const c = card('询价 / 留言');
+    const bar = document.createElement('div'); bar.style.cssText = 'display:flex;gap:0.5rem;margin-bottom:0.8rem';
+    const refresh = document.createElement('button'); refresh.className = 'btn ghost'; refresh.textContent = '↻ 刷新'; refresh.addEventListener('click', () => renderInbox());
+    const exp = document.createElement('button'); exp.className = 'btn ghost'; exp.textContent = '导出 CSV';
+    bar.appendChild(refresh); bar.appendChild(exp); c.appendChild(bar);
+    const listHost = document.createElement('div'); listHost.innerHTML = '<div style="color:var(--muted)">加载中...</div>'; c.appendChild(listHost);
+    sec.appendChild(c);
+    const leads = await loadLeads(true); updateInboxBadge();
+    exp.addEventListener('click', () => {
+      const rows = [['时间', '姓名', '邮箱', '公司', '语言', '页面', '内容']].concat(leads.map((l) => [new Date(l.time).toLocaleString(), l.name, l.email, l.company, l.lang, l.page, (l.message || '').replace(/\n/g, ' ')]));
+      const csv = '\ufeff' + rows.map((r) => r.map((x) => '"' + String(x == null ? '' : x).replace(/"/g, '""') + '"').join(',')).join('\n');
+      const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' })); a.download = 'leads.csv'; a.click();
+    });
+    if (!leads.length) { listHost.innerHTML = '<div style="color:var(--muted)">还没有收到询价。前台联系页的表单提交后会显示在这里。</div>'; return; }
+    listHost.innerHTML = '';
+    leads.forEach((l) => {
+      const el = document.createElement('div'); el.className = 'lead' + (l.read ? '' : ' unread');
+      const contact = [l.email, l.company].filter(Boolean).join(' · ');
+      el.innerHTML = '<div class="lh"><b>' + esc(l.name || '(未填姓名)') + '</b>' +
+        (contact ? '<span class="meta">' + esc(contact) + '</span>' : '') +
+        '<span class="meta">' + esc(new Date(l.time).toLocaleString()) + ' · ' + esc(l.lang || '') + '</span><span class="acts"></span></div>' +
+        '<div class="msg">' + esc(l.message || '') + '</div>';
+      const acts = el.querySelector('.acts');
+      const rd = document.createElement('button'); rd.className = 'icon-btn'; rd.textContent = l.read ? '↺' : '✓'; rd.title = l.read ? '标为未读' : '标为已读';
+      rd.addEventListener('click', async () => { await fetch('/api/leads/read', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: l.id, read: !l.read }) }); leadsCache = null; renderInbox(); });
+      const del = document.createElement('button'); del.className = 'icon-btn del'; del.textContent = '✕';
+      del.addEventListener('click', async () => { if (!confirm('删除该条询价？')) return; await fetch('/api/leads', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: l.id }) }); leadsCache = null; renderInbox(); });
+      acts.appendChild(rd); acts.appendChild(del); listHost.appendChild(el);
+    });
+  }
+
+  const RENDERERS = { dashboard: renderDashboard, brand: renderBrand, hero: renderHero, wizard: renderWizard, products: renderProducts, contact: renderContact, chat: renderChat, inbox: renderInbox, media: renderMedia, tools: renderTools, account: renderAccount };
   function renderSection(sec) { if (RENDERERS[sec]) RENDERERS[sec](); }
 
   function renderLangTabs() {
@@ -550,7 +643,7 @@
     $$('.menu-item').forEach((m) => m.classList.toggle('active', m.dataset.sec === sec));
     $$('.section').forEach((s) => s.classList.toggle('active', s.dataset.sec === sec));
     $('#secTitle').textContent = SEC_TITLES[sec] || '';
-    $('#langTabs').style.display = (sec === 'account' || sec === 'media') ? 'none' : '';
+    $('#langTabs').style.display = ['dashboard', 'inbox', 'media', 'account'].indexOf(sec) > -1 ? 'none' : '';
     updatePreview();
     renderSection(sec);
   }
@@ -576,8 +669,11 @@
     const res = await fetch('/api/content'); data = await res.json();
     if (!data || typeof data !== 'object') data = {};
     data.langs = data.langs || [{ code: 'zh', label: '中文', dir: 'ltr' }];
+    data.settings = data.settings || {};
     lang = data.defaultLang || (data.langs[0] && data.langs[0].code) || 'zh';
-    renderLangTabs(); switchSection('brand'); markClean();
+    leadsCache = null; uploadsCache = null;
+    renderLangTabs(); switchSection('dashboard'); markClean();
+    loadLeads(true).then(updateInboxBadge).catch(() => {});
   }
 
   function bindGlobal() {
