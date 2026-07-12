@@ -7,6 +7,7 @@
   let lang = 'zh';
   let currentSec = 'brand';
   let dirty = false;
+  let editIdx = null; // 产品编辑：null=列表视图，数字=编辑第 N 个产品
 
   const SEC_TITLES = { dashboard: '仪表盘', brand: '品牌与导航', hero: '首页文案', wizard: '智能选型', products: '产品管理', contact: '联系页', chat: '在线客服', inbox: '收件箱', media: '媒体库', tools: '翻译与备份', account: '账号安全' };
 
@@ -223,8 +224,15 @@
   }
 
   function renderProducts() {
-    const sec = $('#secProducts'); sec.innerHTML = '';
     const l = L(); l.productsSection = l.productsSection || {}; l.products = l.products || [];
+    if (editIdx != null && l.products[editIdx]) return renderProductEditor(l.products[editIdx], l.products);
+    editIdx = null;
+    renderProductList(l);
+  }
+
+  // ---------- 产品列表 ----------
+  function renderProductList(l) {
+    const sec = $('#secProducts'); sec.innerHTML = '';
     const c1 = card('【' + lang + '】板块文案');
     c1.appendChild(field('标签', l.productsSection, 'tag'));
     c1.appendChild(field('标题', l.productsSection, 'title', { textarea: true, rows: 2, hint: '换行用回车，*星号*高亮' }));
@@ -240,111 +248,140 @@
     imFi.addEventListener('change', () => { if (imFi.files[0]) importExcel(imFi.files[0]); imFi.value = ''; });
     imLabel.appendChild(imFi); cx.appendChild(exBtn); cx.appendChild(imLabel); sec.appendChild(cx);
 
+    // 列表
+    const c2 = card('产品列表（共 ' + l.products.length + ' 个）');
     l.products.forEach((p, i) => {
-      const c = card('');
-      const head = document.createElement('div'); head.className = 'li-head';
-      const title = document.createElement('span'); title.className = 'li-title prod-collapse'; title.textContent = '📦 ' + (p.name || '产品') + ' （点击展开/收起）';
-      head.appendChild(title);
-      const acts = document.createElement('div'); acts.className = 'li-actions';
+      const cover = p.cardImage || (p.gallery && p.gallery[0] && p.gallery[0].src) || '';
+      const isVid = !cover && p.gallery && p.gallery[0] && p.gallery[0].type === 'video';
+      const row = document.createElement('div'); row.className = 'plist-row';
+      row.innerHTML =
+        '<div class="pl-thumb">' + (cover ? '<img src="' + esc(cover) + '">' : (isVid ? '🎬' : '📦')) + '</div>' +
+        '<div class="pl-main"><div class="pl-name">' + esc(p.name || '(未命名)') + (p.badge ? ' <span class="pl-badge">' + esc(p.badge) + '</span>' : '') + '</div>' +
+        '<div class="pl-meta">/' + esc(p.slug || p.id || '') + ' · 图集 ' + ((p.gallery || []).length) + ' · 参数 ' + ((p.specs || []).length) + (p.price && p.price.main ? ' · ' + esc(p.price.main) : '') + '</div></div>';
+      const acts = document.createElement('div'); acts.className = 'pl-acts';
+      const edit = document.createElement('button'); edit.className = 'btn'; edit.textContent = '编辑';
+      edit.addEventListener('click', () => { editIdx = i; renderProducts(); window.scrollTo(0, 0); });
+      acts.appendChild(edit);
       acts.appendChild(iconBtn('↑', '', () => moveItem(l.products, i, -1, renderProducts)));
       acts.appendChild(iconBtn('↓', '', () => moveItem(l.products, i, 1, renderProducts)));
       const sync = iconBtn('🔁', '', () => syncProductMedia(p)); sync.title = '把图集/封面/价格同步到所有语言'; acts.appendChild(sync);
-      acts.appendChild(iconBtn('✕', 'del', () => { if (confirm('删除该产品？')) { l.products.splice(i, 1); markDirty(); renderProducts(); } }));
-      head.appendChild(acts); c.appendChild(head);
-
-      const body = document.createElement('div'); body.className = 'prod-body';
-      if (p._collapsed) body.style.display = 'none';
-      title.addEventListener('click', () => { p._collapsed = !p._collapsed; body.style.display = p._collapsed ? 'none' : ''; });
-
-      const g1 = document.createElement('div'); g1.className = 'grid2';
-      g1.appendChild(field('产品名称', p, 'name')); g1.appendChild(field('网址标识 slug', p, 'slug', { placeholder: 'manual' }));
-      body.appendChild(g1);
-      const g2 = document.createElement('div'); g2.className = 'grid2';
-      g2.appendChild(field('徽章文字', p, 'badge', { placeholder: '入门级' }));
-      g2.appendChild(field('徽章样式class', p, 'badgeClass', { placeholder: 'entry/pro/expert/highend/portable/industrial' }));
-      body.appendChild(g2);
-      body.appendChild(field('副标题（详情页）', p, 'subtitle', { textarea: true, rows: 2 }));
-      body.appendChild(field('首页卡片描述', p, 'cardDesc', { textarea: true, rows: 2 }));
-      const g3 = document.createElement('div'); g3.className = 'grid2';
-      g3.appendChild(csvField('首页卡片标签(逗号)', p, 'cardTags'));
-      g3.appendChild(csvField('选型匹配(逗号)', p, 'match', { hint: 'thin/medium/thick/custom, small/large' }));
-      body.appendChild(g3);
-
-      // 封面图（卡片）
-      const coverRow = document.createElement('div'); coverRow.className = 'row';
-      coverRow.innerHTML = '<label class="lbl">首页卡片封面图 URL</label>';
-      coverRow.appendChild(field('', p, 'cardImage', { placeholder: '/uploads/xxx.jpg 或图片直链' }));
-      const coverUp = document.createElement('label'); coverUp.className = 'btn ghost'; coverUp.textContent = '上传封面图';
-      const cfi = document.createElement('input'); cfi.type = 'file'; cfi.accept = 'image/*'; cfi.className = 'hidden';
-      cfi.addEventListener('change', async () => { if (!cfi.files[0]) return; coverUp.textContent = '上传中...'; try { const r = await uploadFile(cfi.files[0]); p.cardImage = r.url; markDirty(); renderProducts(); } catch (e) { toast(e.message, 'bad'); } });
-      coverUp.appendChild(cfi); coverRow.appendChild(coverUp);
-      coverRow.appendChild(pickBtn('从媒体库选', (f) => { p.cardImage = f.url; markDirty(); renderProducts(); }));
-      body.appendChild(coverRow);
-
-      // 价格
-      p.price = p.price || {};
-      const pc = document.createElement('div'); pc.innerHTML = '<label class="lbl">价格</label>';
-      const pg = document.createElement('div'); pg.className = 'grid3';
-      pg.appendChild(field('主价格', p.price, 'main', { placeholder: '¥8,800' }));
-      pg.appendChild(field('后缀', p.price, 'cny', { placeholder: '起' }));
-      pg.appendChild(field('副价格', p.price, 'usd', { placeholder: '约 $1,210 USD' }));
-      pc.appendChild(pg);
-      const pg2 = document.createElement('div'); pg2.className = 'grid2';
-      pg2.appendChild(field('价格标签', p.price, 'label', { placeholder: '参考价格' }));
-      pg2.appendChild(field('价格备注', p.price, 'note'));
-      pc.appendChild(pg2); body.appendChild(pc);
-
-      const g4 = document.createElement('div'); g4.className = 'grid2';
-      g4.appendChild(field('主按钮文字', p, 'ctaPrimary')); g4.appendChild(field('次按钮文字', p, 'ctaSecondary'));
-      body.appendChild(g4);
-
-      // 交付标签
-      const dc = document.createElement('div'); dc.innerHTML = '<label class="lbl">交付标签</label>'; p.delivery = p.delivery || [];
-      renderList(dc, p.delivery, { label: (x, i) => '标签 ' + (i + 1), rerender: renderProducts, addLabel: '+ 交付标签', makeDefault: () => ({ text: '', green: false }), fields: (x, host) => {
-        const g = document.createElement('div'); g.className = 'grid2'; g.appendChild(field('文字', x, 'text', { placeholder: '✅ 现货供应' }));
-        g.appendChild(field('高亮绿色', x, 'green', { select: true, options: [{ value: 'false', label: '否' }, { value: 'true', label: '是' }], onInput: (v) => { x.green = v === 'true'; } })); host.appendChild(g);
-      } }); body.appendChild(dc);
-
-      // 信任徽章
-      const tc = document.createElement('div'); tc.className = 'row'; tc.innerHTML = '<label class="lbl">信任徽章</label>';
-      tc.appendChild(csvField('（逗号分隔）', p, 'trustBadges', { placeholder: '✅ CE认证, 💯 30天退货' })); body.appendChild(tc);
-
-      // 卖点/优势 benefits
-      const bc = document.createElement('div'); bc.innerHTML = '<label class="lbl">核心优势（图标+文字）</label>'; p.benefits = p.benefits || [];
-      renderList(bc, p.benefits, { label: (x, i) => '优势 ' + (i + 1), rerender: renderProducts, addLabel: '+ 优势', makeDefault: () => ({ icon: '🎯', text: '' }), fields: (x, host) => {
-        const g = document.createElement('div'); g.className = 'grid2'; g.appendChild(field('图标', x, 'icon')); g.appendChild(field('文字', x, 'text')); host.appendChild(g);
-      } }); body.appendChild(bc);
-
-      // 亮点
-      body.appendChild(field('亮点标题', p, 'highlightsTitle', { placeholder: '🔥 核心亮点' }));
-      body.appendChild(field('产品亮点（每行一条）', { v: (p.highlights || []).join('\n') }, 'v', { textarea: true, rows: 4, onInput: (val) => { p.highlights = val.split('\n').map((s) => s.trim()).filter(Boolean); } }));
-
-      // 参数
-      body.appendChild(field('参数标题', p, 'specsTitle', { placeholder: '📋 技术规格' }));
-      const spc = document.createElement('div'); spc.innerHTML = '<label class="lbl">技术参数</label>'; p.specs = p.specs || [];
-      renderList(spc, p.specs, { label: (x, i) => '参数 ' + (i + 1), rerender: renderProducts, addLabel: '+ 参数', makeDefault: () => ({ k: '', v: '' }), fields: (x, host) => {
-        const g = document.createElement('div'); g.className = 'grid2'; g.appendChild(field('名称', x, 'k')); g.appendChild(field('值', x, 'v')); host.appendChild(g);
-      } }); body.appendChild(spc);
-
-      // 相关推荐
-      body.appendChild(field('相关推荐标题', p, 'relatedTitle'));
-      const rc = document.createElement('div'); rc.innerHTML = '<label class="lbl">相关产品（slug 对应其它产品的网址标识）</label>'; p.related = p.related || [];
-      renderList(rc, p.related, { label: (x, i) => '推荐 ' + (i + 1), rerender: renderProducts, addLabel: '+ 相关产品', makeDefault: () => ({ slug: '', name: '', note: '' }), fields: (x, host) => {
-        const g = document.createElement('div'); g.className = 'grid3'; g.appendChild(field('slug', x, 'slug')); g.appendChild(field('名称', x, 'name')); g.appendChild(field('备注', x, 'note')); host.appendChild(g);
-      } }); body.appendChild(rc);
-
-      // 图集
-      const gc = document.createElement('div'); gc.className = 'row'; gc.innerHTML = '<label class="lbl">详情页图集（图片/视频，第一个为主图）</label>';
-      p.gallery = p.gallery || [];
-      mediaEditor(gc, p.gallery, renderProducts, 'image/*,video/*');
-      gc.appendChild(pickBtn('从媒体库添加', (f) => { p.gallery.push({ type: f.type, src: f.url, alt: '' }); markDirty(); renderProducts(); }));
-      body.appendChild(gc);
-
-      c.appendChild(body); sec.appendChild(c);
+      acts.appendChild(iconBtn('✕', 'del', () => { if (confirm('删除产品「' + (p.name || '') + '」？')) { l.products.splice(i, 1); markDirty(); renderProducts(); } }));
+      row.appendChild(acts);
+      row.querySelector('.pl-main').addEventListener('click', () => { editIdx = i; renderProducts(); window.scrollTo(0, 0); });
+      c2.appendChild(row);
     });
     const add = document.createElement('button'); add.className = 'add-btn'; add.type = 'button'; add.textContent = '+ 添加产品';
-    add.addEventListener('click', () => { l.products.push({ id: 'p' + Date.now(), slug: 'p' + Date.now(), name: '新产品', badge: '', gallery: [], specs: [], benefits: [], delivery: [], highlights: [], related: [], cardTags: [], match: [], price: {} }); markDirty(); renderProducts(); });
-    sec.appendChild(add);
+    add.addEventListener('click', () => {
+      l.products.push({ id: 'p' + Date.now(), slug: 'p' + Date.now(), name: '新产品', badge: '', gallery: [], specs: [], benefits: [], delivery: [], highlights: [], related: [], cardTags: [], match: [], price: {} });
+      editIdx = l.products.length - 1; markDirty(); renderProducts(); window.scrollTo(0, 0);
+    });
+    c2.appendChild(add);
+    sec.appendChild(c2);
+  }
+
+  // ---------- 单个产品编辑 ----------
+  function renderProductEditor(p, list) {
+    const sec = $('#secProducts'); sec.innerHTML = '';
+    const bar = document.createElement('div'); bar.style.cssText = 'display:flex;align-items:center;gap:0.8rem;margin-bottom:1rem';
+    const back = document.createElement('button'); back.className = 'btn ghost'; back.textContent = '← 返回产品列表';
+    back.addEventListener('click', () => { editIdx = null; renderProducts(); window.scrollTo(0, 0); });
+    const t = document.createElement('div'); t.style.cssText = 'font-weight:600'; t.textContent = '📦 ' + (p.name || '新产品') + '（' + lang + '）';
+    bar.appendChild(back); bar.appendChild(t); sec.appendChild(bar);
+
+    // 基本信息
+    const cb = card('基本信息');
+    const g1 = document.createElement('div'); g1.className = 'grid2';
+    g1.appendChild(field('产品名称', p, 'name')); g1.appendChild(field('网址标识 slug', p, 'slug', { placeholder: 'manual' }));
+    cb.appendChild(g1);
+    const g2 = document.createElement('div'); g2.className = 'grid2';
+    g2.appendChild(field('徽章文字', p, 'badge', { placeholder: '入门级' }));
+    g2.appendChild(field('徽章样式class', p, 'badgeClass', { placeholder: 'entry/pro/expert/highend/portable/industrial' }));
+    cb.appendChild(g2);
+    cb.appendChild(field('副标题（详情页标题下的介绍）', p, 'subtitle', { textarea: true, rows: 2 }));
+    cb.appendChild(field('首页卡片描述', p, 'cardDesc', { textarea: true, rows: 2 }));
+    const g3 = document.createElement('div'); g3.className = 'grid2';
+    g3.appendChild(csvField('首页卡片标签(逗号)', p, 'cardTags'));
+    g3.appendChild(csvField('选型匹配(逗号)', p, 'match', { hint: 'thin/medium/thick/custom, small/large' }));
+    cb.appendChild(g3);
+    const coverRow = document.createElement('div'); coverRow.className = 'row';
+    coverRow.innerHTML = '<label class="lbl">首页卡片封面图</label>';
+    if (p.cardImage) { const pv = document.createElement('div'); pv.className = 'logo-preview'; pv.style.marginBottom = '0.4rem'; pv.innerHTML = '<img src="' + esc(p.cardImage) + '">'; coverRow.appendChild(pv); }
+    coverRow.appendChild(field('', p, 'cardImage', { placeholder: '/uploads/xxx.jpg 或图片直链' }));
+    const coverUp = document.createElement('label'); coverUp.className = 'btn ghost'; coverUp.textContent = '上传封面图';
+    const cfi = document.createElement('input'); cfi.type = 'file'; cfi.accept = 'image/*'; cfi.className = 'hidden';
+    cfi.addEventListener('change', async () => { if (!cfi.files[0]) return; coverUp.textContent = '上传中...'; try { const r = await uploadFile(cfi.files[0]); p.cardImage = r.url; markDirty(); renderProducts(); } catch (e) { toast(e.message, 'bad'); } });
+    coverUp.appendChild(cfi); coverRow.appendChild(coverUp);
+    coverRow.appendChild(pickBtn('从媒体库选', (f) => { p.cardImage = f.url; markDirty(); renderProducts(); }));
+    cb.appendChild(coverRow);
+    sec.appendChild(cb);
+
+    // 图集（图片/视频）
+    const cg = card('详情页图集（图片 / 视频，第一个为主图）');
+    hint(cg, '支持上传视频（mp4/webm/mov，最大 300MB）与图片；也可从媒体库选择已上传的文件。');
+    p.gallery = p.gallery || [];
+    const gc = document.createElement('div');
+    mediaEditor(gc, p.gallery, renderProducts, 'image/*,video/*');
+    gc.appendChild(pickBtn('从媒体库添加', (f) => { p.gallery.push({ type: f.type, src: f.url, alt: '' }); markDirty(); renderProducts(); }));
+    cg.appendChild(gc); sec.appendChild(cg);
+
+    // 价格与按钮
+    p.price = p.price || {};
+    const cp = card('价格与按钮');
+    const pg = document.createElement('div'); pg.className = 'grid3';
+    pg.appendChild(field('主价格', p.price, 'main', { placeholder: '¥8,800' }));
+    pg.appendChild(field('后缀', p.price, 'cny', { placeholder: '起' }));
+    pg.appendChild(field('副价格', p.price, 'usd', { placeholder: '约 $1,210 USD' }));
+    cp.appendChild(pg);
+    const pg2 = document.createElement('div'); pg2.className = 'grid2';
+    pg2.appendChild(field('价格标签', p.price, 'label', { placeholder: '参考价格' }));
+    pg2.appendChild(field('价格备注', p.price, 'note'));
+    cp.appendChild(pg2);
+    const g4 = document.createElement('div'); g4.className = 'grid2';
+    g4.appendChild(field('主按钮文字', p, 'ctaPrimary')); g4.appendChild(field('次按钮文字', p, 'ctaSecondary'));
+    cp.appendChild(g4); sec.appendChild(cp);
+
+    // 交付与信任
+    const cd = card('交付标签与信任徽章');
+    const dc = document.createElement('div'); dc.innerHTML = '<label class="lbl">交付标签</label>'; p.delivery = p.delivery || [];
+    renderList(dc, p.delivery, { label: (x, i) => '标签 ' + (i + 1), rerender: renderProducts, addLabel: '+ 交付标签', makeDefault: () => ({ text: '', green: false }), fields: (x, host) => {
+      const g = document.createElement('div'); g.className = 'grid2'; g.appendChild(field('文字', x, 'text', { placeholder: '✅ 现货供应' }));
+      g.appendChild(field('高亮绿色', x, 'green', { select: true, options: [{ value: 'false', label: '否' }, { value: 'true', label: '是' }], onInput: (v) => { x.green = v === 'true'; } })); host.appendChild(g);
+    } }); cd.appendChild(dc);
+    const tc = document.createElement('div'); tc.className = 'row'; tc.innerHTML = '<label class="lbl">信任徽章</label>';
+    tc.appendChild(csvField('（逗号分隔）', p, 'trustBadges', { placeholder: '✅ CE认证, 💯 30天退货' })); cd.appendChild(tc);
+    sec.appendChild(cd);
+
+    // 优势与亮点
+    const ca = card('核心优势与亮点');
+    const bc = document.createElement('div'); bc.innerHTML = '<label class="lbl">核心优势（图标+文字）</label>'; p.benefits = p.benefits || [];
+    renderList(bc, p.benefits, { label: (x, i) => '优势 ' + (i + 1), rerender: renderProducts, addLabel: '+ 优势', makeDefault: () => ({ icon: '🎯', text: '' }), fields: (x, host) => {
+      const g = document.createElement('div'); g.className = 'grid2'; g.appendChild(field('图标', x, 'icon')); g.appendChild(field('文字', x, 'text')); host.appendChild(g);
+    } }); ca.appendChild(bc);
+    ca.appendChild(field('亮点标题', p, 'highlightsTitle', { placeholder: '🔥 核心亮点' }));
+    ca.appendChild(field('产品亮点（每行一条）', { v: (p.highlights || []).join('\n') }, 'v', { textarea: true, rows: 4, onInput: (val) => { p.highlights = val.split('\n').map((s) => s.trim()).filter(Boolean); } }));
+    sec.appendChild(ca);
+
+    // 技术参数
+    const cs = card('技术参数');
+    cs.appendChild(field('参数标题', p, 'specsTitle', { placeholder: '📋 技术规格' }));
+    const spc = document.createElement('div'); p.specs = p.specs || [];
+    renderList(spc, p.specs, { label: (x, i) => '参数 ' + (i + 1), rerender: renderProducts, addLabel: '+ 参数', makeDefault: () => ({ k: '', v: '' }), fields: (x, host) => {
+      const g = document.createElement('div'); g.className = 'grid2'; g.appendChild(field('名称', x, 'k', { placeholder: '最大厚度' })); g.appendChild(field('值', x, 'v', { placeholder: '1-5mm' })); host.appendChild(g);
+    } }); cs.appendChild(spc); sec.appendChild(cs);
+
+    // 相关推荐
+    const cr = card('相关推荐');
+    cr.appendChild(field('相关推荐标题', p, 'relatedTitle'));
+    const rc = document.createElement('div'); rc.innerHTML = '<label class="lbl">相关产品（slug 对应其它产品的网址标识）</label>'; p.related = p.related || [];
+    renderList(rc, p.related, { label: (x, i) => '推荐 ' + (i + 1), rerender: renderProducts, addLabel: '+ 相关产品', makeDefault: () => ({ slug: '', name: '', note: '' }), fields: (x, host) => {
+      const g = document.createElement('div'); g.className = 'grid3'; g.appendChild(field('slug', x, 'slug')); g.appendChild(field('名称', x, 'name')); g.appendChild(field('备注', x, 'note')); host.appendChild(g);
+    } }); cr.appendChild(rc); sec.appendChild(cr);
+
+    // 底部返回 + 保存
+    const foot = document.createElement('div'); foot.style.cssText = 'display:flex;gap:0.6rem;margin-top:0.5rem';
+    const back2 = document.createElement('button'); back2.className = 'btn ghost'; back2.textContent = '← 返回列表'; back2.addEventListener('click', () => { editIdx = null; renderProducts(); window.scrollTo(0, 0); });
+    const save2 = document.createElement('button'); save2.className = 'btn'; save2.textContent = '保存全部修改'; save2.addEventListener('click', save);
+    foot.appendChild(back2); foot.appendChild(save2); sec.appendChild(foot);
   }
 
   function syncProductMedia(p) {
@@ -754,13 +791,14 @@
     const host = $('#langTabs'); host.innerHTML = '';
     (data.langs || []).forEach((lg) => {
       const b = document.createElement('button'); b.className = 'lang-tab' + (lg.code === lang ? ' active' : ''); b.textContent = lg.label || lg.code;
-      b.addEventListener('click', () => { lang = lg.code; renderLangTabs(); updatePreview(); renderSection(currentSec); });
+      b.addEventListener('click', () => { lang = lg.code; editIdx = null; renderLangTabs(); updatePreview(); renderSection(currentSec); });
       host.appendChild(b);
     });
   }
 
   function switchSection(sec) {
     currentSec = sec;
+    editIdx = null; // 每次切换菜单回到产品列表视图
     $$('.menu-item').forEach((m) => m.classList.toggle('active', m.dataset.sec === sec));
     $$('.section').forEach((s) => s.classList.toggle('active', s.dataset.sec === sec));
     $('#secTitle').textContent = SEC_TITLES[sec] || '';
