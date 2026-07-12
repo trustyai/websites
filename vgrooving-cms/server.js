@@ -26,9 +26,14 @@ const PUBLIC_DIR = path.join(__dirname, 'public');
 const DEFAULT_USER = 'admin';
 const DEFAULT_PASS = 'admin123';
 
+const STATS_FILE = path.join(DATA_DIR, 'stats.json');
+
 // 图片压缩库（可选，装不上也不影响上传）
 let Jimp = null;
 try { Jimp = require('jimp'); } catch (e) { /* 未安装则跳过压缩 */ }
+// 邮件库（可选，装不上也不影响其它功能）
+let nodemailer = null;
+try { nodemailer = require('nodemailer'); } catch (e) { /* 未安装则跳过邮件 */ }
 
 // ---------- 初始化数据文件 ----------
 function ensureDirs() {
@@ -160,7 +165,16 @@ app.post('/api/password', requireAuth, (req, res) => {
 });
 
 // ---------- 内容 API ----------
+// 公开接口：剥离 settings（含 Webhook/SMTP 密码等敏感信息），前台用不到
 app.get('/api/content', (req, res) => {
+  const c = readJson(CONTENT_FILE, {});
+  const pub = Object.assign({}, c);
+  delete pub.settings;
+  res.json(pub);
+});
+
+// 后台接口：返回完整内容（含 settings），需登录
+app.get('/api/admin/content', requireAuth, (req, res) => {
   res.json(readJson(CONTENT_FILE, {}));
 });
 
@@ -262,6 +276,26 @@ async function notifyWebhook(lead) {
   try { await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payloads[0]) }); }
   catch (e) { /* 通知失败不影响主流程 */ }
 }
+async function sendLeadEmail(lead) {
+  if (!nodemailer) return;
+  const s = ((readJson(CONTENT_FILE, {}).settings) || {}).smtp || {};
+  if (!s.host || !s.to) return;
+  try {
+    const transporter = nodemailer.createTransport({
+      host: s.host, port: Number(s.port) || 465, secure: s.secure !== false && Number(s.port) !== 587,
+      auth: s.user ? { user: s.user, pass: s.pass } : undefined,
+    });
+    const html = `<h3>新的询价 / 留言</h3><ul>
+      <li>姓名：${escHtml(lead.name)}</li><li>邮箱：${escHtml(lead.email)}</li>
+      <li>公司：${escHtml(lead.company)}</li><li>语言：${escHtml(lead.lang)}</li>
+      <li>页面：${escHtml(lead.page)}</li></ul><p>${escHtml(lead.message).replace(/\n/g, '<br>')}</p>`;
+    await transporter.sendMail({
+      from: s.from || s.user, to: s.to, subject: '【网站询价】' + (lead.name || lead.email || '新留言'),
+      replyTo: lead.email || undefined, html,
+    });
+  } catch (e) { /* 邮件失败不影响主流程 */ }
+}
+function escHtml(s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
 app.post('/api/leads', (req, res) => {
   const b = req.body || {};
   if (b.website) return res.json({ ok: true }); // 蜜罐：机器人填了隐藏字段，静默丢弃
@@ -279,6 +313,7 @@ app.post('/api/leads', (req, res) => {
   };
   const leads = readLeads(); leads.unshift(lead); writeJson(LEADS_FILE, leads);
   notifyWebhook(lead);
+  sendLeadEmail(lead);
   res.json({ ok: true });
 });
 app.get('/api/leads', requireAuth, (req, res) => res.json({ leads: readLeads() }));
@@ -291,6 +326,32 @@ app.delete('/api/leads', requireAuth, (req, res) => {
   const id = req.body && req.body.id; let leads = readLeads();
   if (req.body && req.body.all) leads = []; else leads = leads.filter((l) => l.id !== id);
   writeJson(LEADS_FILE, leads); res.json({ ok: true });
+});
+
+// ---------- 访问统计 ----------
+let stats = readJson(STATS_FILE, null) || { total: 0, days: {}, paths: {}, langs: {} };
+let statsDirty = false;
+let statsTimer = null;
+function flushStats() { if (statsDirty) { writeJson(STATS_FILE, stats); statsDirty = false; } }
+function recordView(type, slug, lang) {
+  const key = type === 'product' ? 'product:' + slug : type;
+  const day = new Date().toISOString().slice(0, 10);
+  stats.total = (stats.total || 0) + 1;
+  stats.days[day] = (stats.days[day] || 0) + 1;
+  stats.paths[key] = (stats.paths[key] || 0) + 1;
+  if (lang) stats.langs[lang] = (stats.langs[lang] || 0) + 1;
+  // 仅保留最近 60 天
+  const days = Object.keys(stats.days).sort();
+  while (days.length > 60) delete stats.days[days.shift()];
+  statsDirty = true;
+  if (!statsTimer) statsTimer = setTimeout(() => { statsTimer = null; flushStats(); }, 3000);
+}
+app.get('/api/stats', requireAuth, (req, res) => {
+  const days = Object.keys(stats.days).sort();
+  const last30 = days.slice(-30).map((d) => ({ date: d, count: stats.days[d] }));
+  const today = new Date().toISOString().slice(0, 10);
+  const topPaths = Object.entries(stats.paths).sort((a, b) => b[1] - a[1]).slice(0, 20).map(([k, v]) => ({ key: k, count: v }));
+  res.json({ total: stats.total || 0, today: stats.days[today] || 0, last30, topPaths, langs: stats.langs || {} });
 });
 
 // ---------- SEO：服务端注入 title / description / og / hreflang ----------
@@ -343,10 +404,13 @@ function buildSeo(req, type, langParam, slug) {
 }
 const shellCache = {};
 function renderShell(file, req, res, type, slug) {
+  const content = readJson(CONTENT_FILE, {});
   const seo = buildSeo(req, type, req.params.lang, slug);
+  const headHtml = (content.settings && content.settings.headHtml) || '';
   let html = shellCache[file] || (shellCache[file] = fs.readFileSync(path.join(PUBLIC_DIR, file), 'utf8'));
   html = html.replace(/<html[^>]*>/, '<html lang="' + seo.lang + '" dir="' + seo.dir + '">');
-  html = html.replace(/<title>[\s\S]*?<\/title>/, seo.tags);
+  html = html.replace(/<title>[\s\S]*?<\/title>/, seo.tags + (headHtml ? '\n' + headHtml + '\n' : ''));
+  recordView(type, slug || '', req.params.lang || (content.defaultLang || 'zh'));
   res.set('Content-Type', 'text/html; charset=utf-8').send(html);
 }
 
@@ -387,6 +451,8 @@ app.get('/admin', (req, res) => {
 
 // ---------- 兜底：其余未匹配的非 API 地址跳回首页，避免 404 ----------
 app.get(/^\/(?!api\/).*/, (req, res) => res.redirect('/'));
+
+['SIGINT', 'SIGTERM'].forEach((sig) => process.on(sig, () => { flushStats(); process.exit(0); }));
 
 app.listen(PORT, () => {
   console.log('====================================');

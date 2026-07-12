@@ -20,6 +20,7 @@
     "multer": "^2.2.0"
   },
   "optionalDependencies": {
-    "jimp": "^0.22.12"
+    "jimp": "^0.22.12",
+    "nodemailer": "^6.9.14"
   }
 }

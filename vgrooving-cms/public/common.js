@@ -102,9 +102,40 @@
     nav.innerHTML =
       logo +
       '<ul class="nav-links">' + links + '</ul>' +
+      '<button class="nav-search" title="搜索" onclick="VGsearchOpen()">🔍</button>' +
       '<button class="nav-btn" onclick="openChat()">' + esc(cta) + '</button>' +
       '<div class="lang-switcher"><select onchange="location.href=this.value">' + opts + '</select></div>';
   }
+
+  // ---------- 前台搜索 ----------
+  const SEARCH_PH = { zh: '搜索产品…', en: 'Search products…', es: 'Buscar productos…', ko: '제품 검색…', ar: 'ابحث عن المنتجات…', tr: 'Ürün ara…' };
+  function ensureSearch() {
+    if (document.getElementById('vgSearch')) return;
+    const el = document.createElement('div');
+    el.className = 'search-mask'; el.id = 'vgSearch';
+    el.innerHTML = '<div class="search-box"><input id="vgSearchInput" placeholder="' + esc(SEARCH_PH[VG.lang] || SEARCH_PH.en) + '"><div class="search-results" id="vgSearchResults"></div></div>';
+    document.body.appendChild(el);
+    el.addEventListener('click', (e) => { if (e.target.id === 'vgSearch') VGsearchClose(); });
+    const inp = el.querySelector('#vgSearchInput');
+    inp.addEventListener('input', () => runSearch(inp.value));
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape') VGsearchClose(); });
+  }
+  function runSearch(q) {
+    const box = document.getElementById('vgSearchResults');
+    q = String(q || '').trim().toLowerCase();
+    const products = VG.L.products || [];
+    if (!q) { box.innerHTML = ''; return; }
+    const hay = (p) => [p.name, p.cardDesc, p.subtitle, (p.tags || []).join(' '), (p.cardTags || []).join(' '), (p.specs || []).map((s) => s.k + ' ' + s.v).join(' ')].join(' ').toLowerCase();
+    const hits = products.filter((p) => hay(p).indexOf(q) > -1).slice(0, 12);
+    if (!hits.length) { box.innerHTML = '<div class="search-empty">未找到相关产品 / No results</div>'; return; }
+    box.innerHTML = hits.map((p) => {
+      const m = cardMedia(p);
+      const img = m ? (m.type === 'video' ? '<video src="' + esc(m.src) + '" muted></video>' : '<img src="' + esc(m.src) + '">') : '';
+      return '<a class="search-item" href="' + productHref(VG.lang, p.slug || p.id) + '"><div class="si-thumb">' + img + '</div><div><div class="si-name">' + esc(p.name) + '</div><div class="si-desc">' + esc(p.cardDesc || p.subtitle || '') + '</div></div></a>';
+    }).join('');
+  }
+  global.VGsearchOpen = function () { ensureSearch(); const m = document.getElementById('vgSearch'); m.classList.add('open'); setTimeout(() => { const i = document.getElementById('vgSearchInput'); if (i) i.focus(); }, 50); };
+  global.VGsearchClose = function () { const m = document.getElementById('vgSearch'); if (m) m.classList.remove('open'); };
 
   function renderFooter() {
     const el = document.getElementById('siteFooter');

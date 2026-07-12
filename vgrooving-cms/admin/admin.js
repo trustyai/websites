@@ -231,6 +231,15 @@
     c1.appendChild(field('副标题', l.productsSection, 'subtitle'));
     sec.appendChild(c1);
 
+    // Excel 批量导入/导出
+    const cx = card('批量导入 / 导出（Excel）');
+    hint(cx, '导出为 xlsx（每个语言一个工作表）；编辑后导入会按 slug/id 匹配更新，找不到则新增。图集/图片不在表格内，导入不会覆盖。');
+    const exBtn = document.createElement('button'); exBtn.className = 'btn ghost'; exBtn.textContent = '⬇ 导出 Excel'; exBtn.addEventListener('click', exportExcel);
+    const imLabel = document.createElement('label'); imLabel.className = 'btn ghost'; imLabel.style.marginLeft = '0.5rem'; imLabel.textContent = '⬆ 导入 Excel';
+    const imFi = document.createElement('input'); imFi.type = 'file'; imFi.accept = '.xlsx,.xls,.csv'; imFi.className = 'hidden';
+    imFi.addEventListener('change', () => { if (imFi.files[0]) importExcel(imFi.files[0]); imFi.value = ''; });
+    imLabel.appendChild(imFi); cx.appendChild(exBtn); cx.appendChild(imLabel); sec.appendChild(cx);
+
     l.products.forEach((p, i) => {
       const c = card('');
       const head = document.createElement('div'); head.className = 'li-head';
@@ -349,6 +358,70 @@
       if (tp) { tp.gallery = deepClone(p.gallery); tp.cardImage = p.cardImage; tp.price = deepClone(p.price); n++; }
     });
     markDirty(); toast('已同步到 ' + n + ' 个语言', 'ok');
+  }
+
+  // ============ 产品 Excel 导入/导出 ============
+  function prodToRow(p) {
+    return {
+      id: p.id || '', slug: p.slug || '', name: p.name || '', badge: p.badge || '', badgeClass: p.badgeClass || '',
+      subtitle: p.subtitle || '', cardDesc: p.cardDesc || '',
+      cardTags: (p.cardTags || []).join(', '), match: (p.match || []).join(', '),
+      priceMain: (p.price && p.price.main) || '', priceCny: (p.price && p.price.cny) || '', priceUsd: (p.price && p.price.usd) || '', priceNote: (p.price && p.price.note) || '',
+      ctaPrimary: p.ctaPrimary || '', ctaSecondary: p.ctaSecondary || '',
+      trustBadges: (p.trustBadges || []).join(', '),
+      highlightsTitle: p.highlightsTitle || '', highlights: (p.highlights || []).join(' | '),
+      specsTitle: p.specsTitle || '', specs: (p.specs || []).map((s) => s.k + '=' + s.v).join(' | '),
+    };
+  }
+  function applyRow(p, row) {
+    const S = (k) => (row[k] == null ? '' : String(row[k]).trim());
+    const arr = (k, sep) => S(k) ? S(k).split(sep).map((x) => x.trim()).filter(Boolean) : [];
+    if (S('name')) p.name = S('name');
+    if (S('slug')) p.slug = S('slug');
+    p.badge = S('badge'); p.badgeClass = S('badgeClass'); p.subtitle = S('subtitle'); p.cardDesc = S('cardDesc');
+    p.cardTags = arr('cardTags', /[,，]/); p.match = arr('match', /[,，]/); p.trustBadges = arr('trustBadges', /[,，]/);
+    p.price = p.price || {}; p.price.main = S('priceMain'); p.price.cny = S('priceCny'); p.price.usd = S('priceUsd'); p.price.note = S('priceNote');
+    p.ctaPrimary = S('ctaPrimary'); p.ctaSecondary = S('ctaSecondary');
+    p.highlightsTitle = S('highlightsTitle'); p.highlights = arr('highlights', '|');
+    p.specsTitle = S('specsTitle');
+    p.specs = arr('specs', '|').map((kv) => { const i = kv.indexOf('='); return { k: (i > -1 ? kv.slice(0, i) : kv).trim(), v: (i > -1 ? kv.slice(i + 1) : '').trim() }; });
+    return p;
+  }
+  function exportExcel() {
+    if (!window.XLSX) return toast('Excel 组件未加载', 'bad');
+    const wb = XLSX.utils.book_new();
+    (data.langs || []).forEach((l) => {
+      const rows = ((data.i18n[l.code] && data.i18n[l.code].products) || []).map(prodToRow);
+      const ws = XLSX.utils.json_to_sheet(rows.length ? rows : [prodToRow({})]);
+      XLSX.utils.book_append_sheet(wb, ws, l.code.slice(0, 31));
+    });
+    XLSX.writeFile(wb, 'vgrooving-products-' + new Date().toISOString().slice(0, 10) + '.xlsx');
+  }
+  function importExcel(file) {
+    if (!window.XLSX) return toast('Excel 组件未加载', 'bad');
+    const rd = new FileReader();
+    rd.onload = () => {
+      try {
+        const wb = XLSX.read(rd.result, { type: 'array' });
+        let updated = 0, added = 0;
+        wb.SheetNames.forEach((sheet) => {
+          const code = sheet.trim();
+          if (!(data.i18n && data.i18n[code])) return; // 只导入已存在的语言
+          const rows = XLSX.utils.sheet_to_json(wb.Sheets[sheet]);
+          const list = data.i18n[code].products = data.i18n[code].products || [];
+          rows.forEach((row) => {
+            const key = String(row.slug || row.id || '').trim();
+            if (!key && !row.name) return;
+            let p = list.find((x) => (x.slug || x.id) === key || x.id === key);
+            if (p) { applyRow(p, row); updated++; }
+            else { p = applyRow({ id: key || 'p' + Date.now() + added, slug: key || undefined, gallery: [], benefits: [], delivery: [], related: [] }, row); if (!p.slug) p.slug = p.id; list.push(p); added++; }
+          });
+        });
+        markDirty(); toast('导入完成：更新 ' + updated + ' 项，新增 ' + added + ' 项，请检查后保存', 'ok');
+        renderProducts();
+      } catch (e) { toast('导入失败：' + e.message, 'bad'); }
+    };
+    rd.readAsArrayBuffer(file);
   }
 
   function renderContact() {
@@ -487,7 +560,28 @@
     hint(cs, '网站网址用于生成 sitemap / 分享链接；通知 Webhook 填企业微信/钉钉/飞书群机器人地址，收到询价会自动推送。');
     cs.appendChild(field('网站网址', data.settings, 'siteUrl', { placeholder: 'https://vgrooving.com' }));
     cs.appendChild(field('通知 Webhook（可留空）', data.settings, 'notifyWebhook', { placeholder: 'https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=...' }));
+    cs.appendChild(field('统计代码（插入 <head>，如 Google Analytics / 百度统计）', data.settings, 'headHtml', { textarea: true, rows: 3, placeholder: '<script async src="https://www.googletagmanager.com/gtag/js?id=G-XXXX"></script> ...' }));
     sec.appendChild(cs);
+
+    // 邮件通知（SMTP）
+    data.settings.smtp = data.settings.smtp || {};
+    const sm = data.settings.smtp;
+    const cm = card('询价邮件通知（SMTP）');
+    hint(cm, '填好后，每条询价会同时发到「收件邮箱」。常见：QQ企业邮箱 smtp.exmail.qq.com 端口465；Gmail smtp.gmail.com 端口465。密码用邮箱的“授权码/应用专用密码”。');
+    const sg = document.createElement('div'); sg.className = 'grid3';
+    sg.appendChild(field('SMTP 服务器', sm, 'host', { placeholder: 'smtp.exmail.qq.com' }));
+    sg.appendChild(field('端口', sm, 'port', { placeholder: '465' }));
+    sg.appendChild(field('加密', sm, 'secure', { select: true, options: [{ value: 'true', label: 'SSL(465)' }, { value: 'false', label: 'STARTTLS(587)' }], onInput: (v) => { sm.secure = v === 'true'; } }));
+    cm.appendChild(sg);
+    const sg2 = document.createElement('div'); sg2.className = 'grid2';
+    sg2.appendChild(field('登录账号', sm, 'user', { placeholder: 'sales@vgrooving.com' }));
+    sg2.appendChild(field('授权码 / 密码', sm, 'pass', { type: 'password' }));
+    cm.appendChild(sg2);
+    const sg3 = document.createElement('div'); sg3.className = 'grid2';
+    sg3.appendChild(field('发件人（可留空=登录账号）', sm, 'from', { placeholder: '"V槽PRO" <sales@vgrooving.com>' }));
+    sg3.appendChild(field('收件邮箱（接收询价）', sm, 'to', { placeholder: 'sales@vgrooving.com' }));
+    cm.appendChild(sg3);
+    sec.appendChild(cm);
     // 添加新语言
     const c1 = card('添加新语言');
     hint(c1, '新增一门语言，并可选择“以某语言为模板复制内容”，省去从零开始。');
@@ -578,6 +672,33 @@
     c1.appendChild(quick);
     sec.appendChild(c1);
 
+    // 访问统计
+    const stats = await fetch('/api/stats').then((r) => r.json()).catch(() => null);
+    if (stats) {
+      const cV = card('访问统计');
+      const g2 = document.createElement('div'); g2.className = 'stat-grid';
+      g2.innerHTML = stat(stats.total || 0, '总访问量') + stat(stats.today || 0, '今日访问');
+      cV.appendChild(g2);
+      // 最近 14 天柱状
+      const last = (stats.last30 || []).slice(-14);
+      const max = Math.max(1, ...last.map((d) => d.count));
+      const bars = document.createElement('div'); bars.style.cssText = 'display:flex;align-items:flex-end;gap:4px;height:90px;margin:0.6rem 0';
+      bars.innerHTML = last.map((d) => '<div title="' + d.date + '：' + d.count + '" style="flex:1;background:var(--brand);border-radius:3px 3px 0 0;height:' + Math.round((d.count / max) * 100) + '%;min-height:3px"></div>').join('') || '<div style="color:var(--muted)">暂无数据</div>';
+      cV.appendChild(bars);
+      const lbl = document.createElement('div'); lbl.className = 'hint'; lbl.textContent = '最近 14 天每日访问量';
+      cV.appendChild(lbl);
+      // 热门页面
+      if ((stats.topPaths || []).length) {
+        const tp = document.createElement('div'); tp.style.marginTop = '0.8rem';
+        tp.innerHTML = '<div class="lbl" style="margin-bottom:0.4rem">热门页面</div>' + stats.topPaths.slice(0, 8).map((p) => {
+          const label = p.key === 'home' ? '首页' : p.key === 'contact' ? '联系页' : p.key.replace('product:', '产品：');
+          return '<div class="prog-row"><span class="name" style="width:auto;flex:1">' + esc(label) + '</span><span>' + p.count + '</span></div>';
+        }).join('');
+        cV.appendChild(tp);
+      }
+      sec.appendChild(cV);
+    }
+
     // 各语言完成度（有多少产品填了图集或封面）
     const c2 = card('各语言产品完成度');
     hint(c2, '统计每个语言里“已配图（图集或封面）”的产品占比，帮助你发现还没翻译/配图的语言');
@@ -666,7 +787,7 @@
   function showApp() { $('#loginView').classList.add('hidden'); $('#appView').classList.remove('hidden'); }
 
   async function loadContent() {
-    const res = await fetch('/api/content'); data = await res.json();
+    const res = await fetch('/api/admin/content'); data = await res.json();
     if (!data || typeof data !== 'object') data = {};
     data.langs = data.langs || [{ code: 'zh', label: '中文', dir: 'ltr' }];
     data.settings = data.settings || {};
