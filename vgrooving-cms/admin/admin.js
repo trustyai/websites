@@ -11,6 +11,28 @@
 
   const SEC_TITLES = { dashboard: '仪表盘', brand: '品牌与导航', hero: '首页文案', wizard: '智能选型', products: '产品管理', contact: '联系页', chat: '在线客服', inbox: '收件箱', media: '媒体库', tools: '翻译与备份', account: '账号安全' };
 
+  // ---------- 后台配色主题（存浏览器本地，不影响前台） ----------
+  const ADMIN_THEMES = {
+    graphite: { name: '🌫 石墨灰', vars: { '--bg': '#1e222a', '--panel': '#272c36', '--panel-2': '#313742', '--border': '#3d4552', '--text': '#e8ebf0', '--muted': '#9aa4b2' } },
+    dark: { name: '🌑 深邃黑', vars: { '--bg': '#0f1720', '--panel': '#161f2b', '--panel-2': '#1d2836', '--border': '#2a3646', '--text': '#e6edf3', '--muted': '#8b9bb0' } },
+    navy: { name: '🌌 午夜蓝', vars: { '--bg': '#101c30', '--panel': '#16263f', '--panel-2': '#1e3352', '--border': '#2c456b', '--text': '#e6edf6', '--muted': '#8ba0bd' } },
+    slate: { name: '🪨 岩板灰', vars: { '--bg': '#2b2f36', '--panel': '#353a43', '--panel-2': '#3f454f', '--border': '#4c535f', '--text': '#eceef2', '--muted': '#a7aeb9' } },
+    light: { name: '☀️ 浅色', vars: { '--bg': '#f1f4f8', '--panel': '#ffffff', '--panel-2': '#f5f8fb', '--border': '#dde3ea', '--text': '#1a2230', '--muted': '#6b7684' } },
+    beige: { name: '📜 暖米色', vars: { '--bg': '#f3efe7', '--panel': '#fffdf8', '--panel-2': '#f7f2e9', '--border': '#e6ded0', '--text': '#2b2822', '--muted': '#7a7264' } },
+  };
+  function currentThemeKey() { try { return localStorage.getItem('vg_admin_theme') || 'graphite'; } catch (e) { return 'graphite'; } }
+  function applyAdminTheme(key) {
+    const t = ADMIN_THEMES[key] || ADMIN_THEMES.graphite;
+    Object.entries(t.vars).forEach(([k, v]) => document.documentElement.style.setProperty(k, v));
+    try { localStorage.setItem('vg_admin_theme', key); } catch (e) {}
+  }
+  function initThemeSel() {
+    const s = $('#themeSel'); if (!s) return;
+    s.innerHTML = Object.entries(ADMIN_THEMES).map(([k, t]) => '<option value="' + k + '">' + t.name + '</option>').join('');
+    s.value = currentThemeKey();
+    s.addEventListener('change', () => applyAdminTheme(s.value));
+  }
+
   function langPrefix(code) { return code === (data.defaultLang || 'zh') ? '' : '/' + code; }
   function updatePreview() { const a = $('#previewBtn'); if (a) a.href = (langPrefix(lang) || '/') + (langPrefix(lang) ? '/' : ''); }
   function deepClone(o) { return JSON.parse(JSON.stringify(o || {})); }
@@ -850,7 +872,9 @@
   }
 
   async function boot() {
+    applyAdminTheme(currentThemeKey());
     bindGlobal();
+    initThemeSel();
     try { const res = await fetch('/api/session'); const j = await res.json(); if (j.authed) { showApp(); await loadContent(); } else showLogin(); } catch (e) { showLogin(); }
   }
   boot();
