@@ -76,11 +76,37 @@
       highlights;
   }
 
+  const LBL = {
+    zh: { brand: '品牌', model: '型号', cert: '认证证书', origin: '原产地', moq: '最小起订量', supply: '供货能力', delivery: '发货期限', pack: '常规包装', pay: '付款方式', params: '产品参数', desc: '产品描述' },
+    en: { brand: 'Brand', model: 'Model', cert: 'Certification', origin: 'Origin', moq: 'Min. Order', supply: 'Supply Ability', delivery: 'Lead Time', pack: 'Packaging', pay: 'Payment Terms', params: 'Specifications', desc: 'Description' },
+  };
+  function lbl(k) { return (LBL[window.VG.lang] || LBL.en)[k] || LBL.en[k] || k; }
+
   function renderSpecs(p) {
     const el = document.getElementById('specSection');
-    if (!p.specs || !p.specs.length) { el.innerHTML = ''; return; }
-    el.innerHTML = '<div class="spec-title">' + esc(p.specsTitle || '') + '</div><table class="spec-table">' +
-      p.specs.map((s) => '<tr><td>' + esc(s.k) + '</td><td>' + esc(s.v) + '</td></tr>').join('') + '</table>';
+    const rows = [];
+    const a = p.attrs || {};
+    if (a.brand) rows.push([lbl('brand'), a.brand]);
+    if (a.model) rows.push([lbl('model'), a.model]);
+    if (a.cert) rows.push([lbl('cert'), a.cert]);
+    if (a.origin) rows.push([lbl('origin'), a.origin]);
+    (p.customAttrs || []).forEach((x) => { if (x.name) rows.push([x.name, x.value]); });
+    (p.specs || []).forEach((s) => { if (s.k) rows.push([s.k, s.v]); });
+    const t = p.trade || {};
+    if (t.moq) rows.push([lbl('moq'), t.moq]);
+    if (t.supplyAbility) rows.push([lbl('supply'), t.supplyAbility]);
+    if (t.deliveryTime) rows.push([lbl('delivery'), t.deliveryTime]);
+    if (t.packaging) rows.push([lbl('pack'), t.packaging]);
+    if (t.payments && t.payments.length) rows.push([lbl('pay'), t.payments.join(', ')]);
+    let html = '';
+    if (rows.length) {
+      html += '<div class="spec-title">' + esc(p.specsTitle || lbl('params')) + '</div><table class="spec-table">' +
+        rows.map((r) => '<tr><td>' + esc(r[0]) + '</td><td>' + esc(r[1]) + '</td></tr>').join('') + '</table>';
+    }
+    if (p.description && String(p.description).trim()) {
+      html += '<div class="spec-title" style="margin-top:2rem">' + esc(lbl('desc')) + '</div><div class="product-desc">' + p.description + '</div>';
+    }
+    el.innerHTML = html;
   }
 
   function renderRelated(p, L) {

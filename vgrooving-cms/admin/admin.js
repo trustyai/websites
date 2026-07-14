@@ -8,8 +8,34 @@
   let currentSec = 'brand';
   let dirty = false;
   let editIdx = null; // 产品编辑：null=列表视图，数字=编辑第 N 个产品
+  let me = null; // 当前登录用户 {id,username,name,role}
+  let usersCache = null;
+  let acctEditing = null; // 账号管理：null=列表，'new' 或 用户对象=编辑表单
+  const prodFilter = { q: '', cat: '', owner: '' };
 
-  const SEC_TITLES = { dashboard: '仪表盘', brand: '品牌与导航', hero: '首页文案', wizard: '智能选型', products: '产品管理', contact: '联系页', chat: '在线客服', inbox: '收件箱', media: '媒体库', tools: '翻译与备份', account: '账号安全' };
+  async function loadUsers(force) {
+    if (usersCache && !force) return usersCache;
+    try { const r = await fetch('/api/users'); if (!r.ok) { usersCache = []; return usersCache; } usersCache = (await r.json()).users || []; }
+    catch (e) { usersCache = []; }
+    return usersCache;
+  }
+  function isAdmin() { return me && me.role === 'admin'; }
+  const ROLE_LABEL = { admin: '管理员', sales: '业务员', editor: '制作员' };
+
+  const SEC_TITLES = { dashboard: '仪表盘', brand: '品牌与导航', hero: '首页文案', wizard: '智能选型', products: '产品管理', contact: '联系页', chat: '在线客服', inbox: '收件箱', media: '媒体库', tools: '翻译与备份', accounts: '账号管理', account: '账号安全' };
+
+  // 简易富文本编辑器（无依赖，基于 contenteditable）
+  function richEditor(obj, key) {
+    const wrap = document.createElement('div'); wrap.className = 'row';
+    const tb = document.createElement('div'); tb.className = 'rte-tb';
+    const area = document.createElement('div'); area.className = 'rte-area'; area.contentEditable = 'true';
+    area.innerHTML = obj[key] || '';
+    const cmd = (c, label, val) => { const b = document.createElement('button'); b.type = 'button'; b.title = label; b.innerHTML = label; b.addEventListener('mousedown', (e) => { e.preventDefault(); if (c === 'createLink') { const u = prompt('链接地址', 'https://'); if (u) document.execCommand(c, false, u); } else document.execCommand(c, false, val || null); area.focus(); obj[key] = area.innerHTML; markDirty(); }); return b; };
+    [['bold', '<b>B</b>'], ['italic', '<i>I</i>'], ['underline', '<u>U</u>'], ['insertUnorderedList', '•'], ['insertOrderedList', '1.'], ['formatBlock', 'H', 'h3'], ['createLink', '🔗'], ['removeFormat', '⌫']].forEach((a) => tb.appendChild(cmd(a[0], a[1], a[2])));
+    area.addEventListener('input', () => { obj[key] = area.innerHTML; markDirty(); });
+    wrap.appendChild(tb); wrap.appendChild(area);
+    return wrap;
+  }
 
   // ---------- 后台配色主题（存浏览器本地，不影响前台） ----------
   const ADMIN_THEMES = {
@@ -252,7 +278,10 @@
     renderProductList(l);
   }
 
-  // ---------- 产品列表 ----------
+  function ownerName(id) { if (!id) return '—'; const u = (usersCache || []).find((x) => x.id === id || x.username === id); return u ? u.name : id; }
+  function fmtTime(ms) { if (!ms) return '—'; const d = new Date(ms); const p = (n) => (n < 10 ? '0' + n : n); return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()) + ' ' + p(d.getHours()) + ':' + p(d.getMinutes()); }
+
+  // ---------- 产品列表（表格） ----------
   function renderProductList(l) {
     const sec = $('#secProducts'); sec.innerHTML = '';
     const c1 = card('【' + lang + '】板块文案');
@@ -261,44 +290,83 @@
     c1.appendChild(field('副标题', l.productsSection, 'subtitle'));
     sec.appendChild(c1);
 
-    // Excel 批量导入/导出
-    const cx = card('批量导入 / 导出（Excel）');
-    hint(cx, '导出为 xlsx（每个语言一个工作表）；编辑后导入会按 slug/id 匹配更新，找不到则新增。图集/图片不在表格内，导入不会覆盖。');
-    const exBtn = document.createElement('button'); exBtn.className = 'btn ghost'; exBtn.textContent = '⬇ 导出 Excel'; exBtn.addEventListener('click', exportExcel);
-    const imLabel = document.createElement('label'); imLabel.className = 'btn ghost'; imLabel.style.marginLeft = '0.5rem'; imLabel.textContent = '⬆ 导入 Excel';
-    const imFi = document.createElement('input'); imFi.type = 'file'; imFi.accept = '.xlsx,.xls,.csv'; imFi.className = 'hidden';
-    imFi.addEventListener('change', () => { if (imFi.files[0]) importExcel(imFi.files[0]); imFi.value = ''; });
-    imLabel.appendChild(imFi); cx.appendChild(exBtn); cx.appendChild(imLabel); sec.appendChild(cx);
+    const c2 = card('产品列表');
+    // 工具栏
+    const cats = [...new Set(l.products.map((p) => p.category).filter(Boolean))];
+    const owners = [...new Set(l.products.map((p) => p.owner).filter(Boolean))];
+    const tb = document.createElement('div'); tb.className = 'ptoolbar';
+    const searchInp = document.createElement('input'); searchInp.className = 'inp'; searchInp.placeholder = '搜索产品名称…'; searchInp.value = prodFilter.q;
+    const catSel = document.createElement('select'); catSel.className = 'inp'; catSel.innerHTML = '<option value="">所有分类</option>' + cats.map((c) => '<option' + (prodFilter.cat === c ? ' selected' : '') + '>' + esc(c) + '</option>').join('');
+    const ownerSel = document.createElement('select'); ownerSel.className = 'inp'; ownerSel.innerHTML = '<option value="">所有负责人</option>' + owners.map((o) => '<option value="' + esc(o) + '"' + (prodFilter.owner === o ? ' selected' : '') + '>' + esc(ownerName(o)) + '</option>').join('');
+    const bulkBtn = document.createElement('button'); bulkBtn.className = 'btn ghost'; bulkBtn.textContent = '批量删除';
+    const count = document.createElement('span'); count.className = 'count';
+    const grow = document.createElement('span'); grow.className = 'grow';
+    const exBtn = document.createElement('button'); exBtn.className = 'btn ghost'; exBtn.textContent = '⬇ 导出'; exBtn.addEventListener('click', exportExcel);
+    const imLabel = document.createElement('label'); imLabel.className = 'btn ghost'; imLabel.textContent = '⬆ 导入'; const imFi = document.createElement('input'); imFi.type = 'file'; imFi.accept = '.xlsx,.xls,.csv'; imFi.className = 'hidden'; imFi.addEventListener('change', () => { if (imFi.files[0]) importExcel(imFi.files[0]); imFi.value = ''; }); imLabel.appendChild(imFi);
+    const pubBtn = document.createElement('button'); pubBtn.className = 'btn'; pubBtn.textContent = '发布新产品';
+    tb.appendChild(searchInp); tb.appendChild(catSel); tb.appendChild(ownerSel); tb.appendChild(bulkBtn); tb.appendChild(count); tb.appendChild(grow); tb.appendChild(exBtn); tb.appendChild(imLabel); tb.appendChild(pubBtn);
+    c2.appendChild(tb);
 
-    // 列表
-    const c2 = card('产品列表（共 ' + l.products.length + ' 个）');
+    // 表格
+    const table = document.createElement('table'); table.className = 'ptable';
+    table.innerHTML = '<thead><tr><th><input type="checkbox" id="pAll"></th><th>产品</th><th>负责人</th><th>更新时间</th><th class="pt-ops">操作</th></tr></thead>';
+    const tbody = document.createElement('tbody'); table.appendChild(tbody);
     l.products.forEach((p, i) => {
       const cover = p.cardImage || (p.gallery && p.gallery[0] && p.gallery[0].src) || '';
-      const isVid = !cover && p.gallery && p.gallery[0] && p.gallery[0].type === 'video';
-      const row = document.createElement('div'); row.className = 'plist-row';
-      row.innerHTML =
-        '<div class="pl-thumb">' + (cover ? '<img src="' + esc(cover) + '">' : (isVid ? '🎬' : '📦')) + '</div>' +
-        '<div class="pl-main"><div class="pl-name">' + esc(p.name || '(未命名)') + (p.badge ? ' <span class="pl-badge">' + esc(p.badge) + '</span>' : '') + '</div>' +
-        '<div class="pl-meta">/' + esc(p.slug || p.id || '') + ' · 图集 ' + ((p.gallery || []).length) + ' · 参数 ' + ((p.specs || []).length) + (p.price && p.price.main ? ' · ' + esc(p.price.main) : '') + '</div></div>';
-      const acts = document.createElement('div'); acts.className = 'pl-acts';
-      const edit = document.createElement('button'); edit.className = 'btn'; edit.textContent = '编辑';
-      edit.addEventListener('click', () => { editIdx = i; renderProducts(); window.scrollTo(0, 0); });
-      acts.appendChild(edit);
-      acts.appendChild(iconBtn('↑', '', () => moveItem(l.products, i, -1, renderProducts)));
-      acts.appendChild(iconBtn('↓', '', () => moveItem(l.products, i, 1, renderProducts)));
-      const sync = iconBtn('🔁', '', () => syncProductMedia(p)); sync.title = '把图集/封面/价格同步到所有语言'; acts.appendChild(sync);
-      acts.appendChild(iconBtn('✕', 'del', () => { if (confirm('删除产品「' + (p.name || '') + '」？')) { l.products.splice(i, 1); markDirty(); renderProducts(); } }));
-      row.appendChild(acts);
-      row.querySelector('.pl-main').addEventListener('click', () => { editIdx = i; renderProducts(); window.scrollTo(0, 0); });
-      c2.appendChild(row);
+      const tr = document.createElement('tr'); tr.dataset.idx = i;
+      tr.dataset.name = (p.name || '').toLowerCase(); tr.dataset.cat = p.category || ''; tr.dataset.owner = p.owner || '';
+      tr.innerHTML =
+        '<td><input type="checkbox" class="pchk"></td>' +
+        '<td><div class="pt-prod"><div class="pt-thumb">' + (cover ? '<img src="' + esc(cover) + '">' : '📦') + '</div>' +
+        '<div><div class="pt-name">' + esc(p.name || '(未命名)') + '</div><div class="pt-sub">' + (p.category ? esc(p.category) + ' · ' : '') + '/' + esc(p.slug || p.id || '') + ' · 图集' + ((p.gallery || []).length) + '</div></div></div></td>' +
+        '<td>' + esc(ownerName(p.owner)) + '</td>' +
+        '<td class="pt-sub">' + fmtTime(p.updatedAt || p.createdAt) + '</td>' +
+        '<td class="pt-ops"></td>';
+      const ops = tr.querySelector('.pt-ops');
+      const bEdit = document.createElement('button'); bEdit.textContent = '编辑'; bEdit.addEventListener('click', () => { editIdx = i; renderProducts(); window.scrollTo(0, 0); });
+      const bCopy = document.createElement('button'); bCopy.textContent = '复制'; bCopy.addEventListener('click', () => duplicateProduct(l.products, i));
+      const bDel = document.createElement('button'); bDel.className = 'del'; bDel.textContent = '删除'; bDel.addEventListener('click', () => { if (confirm('删除产品「' + (p.name || '') + '」？')) { l.products.splice(i, 1); markDirty(); renderProducts(); } });
+      ops.appendChild(bEdit); ops.appendChild(bCopy); ops.appendChild(bDel);
+      tr.querySelector('.pt-name').addEventListener('click', () => { editIdx = i; renderProducts(); window.scrollTo(0, 0); });
+      tbody.appendChild(tr);
     });
-    const add = document.createElement('button'); add.className = 'add-btn'; add.type = 'button'; add.textContent = '+ 添加产品';
-    add.addEventListener('click', () => {
-      l.products.push({ id: 'p' + Date.now(), slug: 'p' + Date.now(), name: '新产品', badge: '', gallery: [], specs: [], benefits: [], delivery: [], highlights: [], related: [], cardTags: [], match: [], price: {} });
+    c2.appendChild(table);
+    sec.appendChild(c2);
+
+    function applyFilter() {
+      const q = prodFilter.q.toLowerCase(); let shown = 0;
+      tbody.querySelectorAll('tr').forEach((tr) => {
+        const ok = (!q || tr.dataset.name.indexOf(q) > -1) && (!prodFilter.cat || tr.dataset.cat === prodFilter.cat) && (!prodFilter.owner || tr.dataset.owner === prodFilter.owner);
+        tr.style.display = ok ? '' : 'none'; if (ok) shown++;
+      });
+      count.textContent = '共 ' + shown + ' 个';
+    }
+    searchInp.addEventListener('input', () => { prodFilter.q = searchInp.value; applyFilter(); });
+    catSel.addEventListener('change', () => { prodFilter.cat = catSel.value; applyFilter(); });
+    ownerSel.addEventListener('change', () => { prodFilter.owner = ownerSel.value; applyFilter(); });
+    $('#pAll', table).addEventListener('change', (e) => { tbody.querySelectorAll('tr').forEach((tr) => { if (tr.style.display !== 'none') tr.querySelector('.pchk').checked = e.target.checked; }); });
+    bulkBtn.addEventListener('click', () => {
+      const idxs = Array.from(tbody.querySelectorAll('tr')).filter((tr) => tr.querySelector('.pchk').checked).map((tr) => +tr.dataset.idx).sort((a, b) => b - a);
+      if (!idxs.length) return toast('请先勾选要删除的产品', 'bad');
+      if (!confirm('确认删除选中的 ' + idxs.length + ' 个产品？')) return;
+      idxs.forEach((i) => l.products.splice(i, 1)); markDirty(); renderProducts();
+    });
+    pubBtn.addEventListener('click', () => {
+      l.products.push({ id: 'p' + Date.now(), slug: 'p' + Date.now(), name: '新产品', category: '', owner: (me && me.id) || '', createdAt: Date.now(), updatedAt: Date.now(), badge: '', gallery: [], specs: [], benefits: [], delivery: [], highlights: [], related: [], cardTags: [], match: [], price: {}, attrs: {}, trade: {}, customAttrs: [], description: '' });
       editIdx = l.products.length - 1; markDirty(); renderProducts(); window.scrollTo(0, 0);
     });
-    c2.appendChild(add);
-    sec.appendChild(c2);
+    applyFilter();
+  }
+
+  function duplicateProduct(list, i) {
+    const src = list[i];
+    const copy = deepClone(src);
+    copy.id = 'p' + Date.now();
+    copy.slug = (src.slug || src.id || 'p') + '-copy';
+    copy.name = (src.name || '') + ' 副本';
+    copy.createdAt = Date.now(); copy.updatedAt = Date.now();
+    list.splice(i + 1, 0, copy); markDirty(); renderProducts();
+    toast('已复制，可编辑后保存', 'ok');
   }
 
   // ---------- 单个产品编辑 ----------
@@ -315,6 +383,14 @@
     const g1 = document.createElement('div'); g1.className = 'grid2';
     g1.appendChild(field('产品名称', p, 'name')); g1.appendChild(field('网址标识 slug', p, 'slug', { placeholder: 'manual' }));
     cb.appendChild(g1);
+    const g1b = document.createElement('div'); g1b.className = 'grid2';
+    g1b.appendChild(field('产品分类', p, 'category', { placeholder: '如 Manual Box Making Machine' }));
+    if ((usersCache || []).length) {
+      g1b.appendChild(field('负责人', p, 'owner', { select: true, options: [{ value: '', label: '未分配' }].concat((usersCache || []).map((u) => ({ value: u.id, label: u.name + '（' + (ROLE_LABEL[u.role] || u.role) + '）' }))) }));
+    } else {
+      g1b.appendChild(field('负责人', p, 'owner', { placeholder: '业务员姓名' }));
+    }
+    cb.appendChild(g1b);
     const g2 = document.createElement('div'); g2.className = 'grid2';
     g2.appendChild(field('徽章文字', p, 'badge', { placeholder: '入门级' }));
     g2.appendChild(field('徽章样式class', p, 'badgeClass', { placeholder: 'entry/pro/expert/highend/portable/industrial' }));
@@ -337,6 +413,19 @@
     cb.appendChild(coverRow);
     sec.appendChild(cb);
 
+    // 产品属性
+    p.attrs = p.attrs || {};
+    const cattr = card('产品属性');
+    const ag = document.createElement('div'); ag.className = 'grid2';
+    ag.appendChild(field('品牌', p.attrs, 'brand')); ag.appendChild(field('型号', p.attrs, 'model'));
+    ag.appendChild(field('认证证书', p.attrs, 'cert', { placeholder: 'CE / ISO9001' })); ag.appendChild(field('原产地', p.attrs, 'origin', { placeholder: 'China' }));
+    cattr.appendChild(ag);
+    const cac = document.createElement('div'); cac.innerHTML = '<label class="lbl">自定义属性</label>'; p.customAttrs = p.customAttrs || [];
+    renderList(cac, p.customAttrs, { label: (x, i) => '属性 ' + (i + 1), rerender: renderProducts, addLabel: '+ 自定义属性', makeDefault: () => ({ name: '', value: '' }), fields: (x, host) => {
+      const g = document.createElement('div'); g.className = 'grid2'; g.appendChild(field('属性名', x, 'name', { placeholder: '如 电压' })); g.appendChild(field('属性值', x, 'value', { placeholder: '如 220V' })); host.appendChild(g);
+    } }); cattr.appendChild(cac);
+    sec.appendChild(cattr);
+
     // 图集（图片/视频）
     const cg = card('详情页图集（图片 / 视频，第一个为主图）');
     hint(cg, '支持上传视频（mp4/webm/mov，最大 300MB）与图片；也可从媒体库选择已上传的文件。');
@@ -346,9 +435,9 @@
     gc.appendChild(pickBtn('从媒体库添加', (f) => { p.gallery.push({ type: f.type, src: f.url, alt: '' }); markDirty(); renderProducts(); }));
     cg.appendChild(gc); sec.appendChild(cg);
 
-    // 价格与按钮
-    p.price = p.price || {};
-    const cp = card('价格与按钮');
+    // 交易信息
+    p.price = p.price || {}; p.trade = p.trade || {};
+    const cp = card('交易信息');
     const pg = document.createElement('div'); pg.className = 'grid3';
     pg.appendChild(field('主价格', p.price, 'main', { placeholder: '¥8,800' }));
     pg.appendChild(field('后缀', p.price, 'cny', { placeholder: '起' }));
@@ -358,6 +447,15 @@
     pg2.appendChild(field('价格标签', p.price, 'label', { placeholder: '参考价格' }));
     pg2.appendChild(field('价格备注', p.price, 'note'));
     cp.appendChild(pg2);
+    const tg = document.createElement('div'); tg.className = 'grid2';
+    tg.appendChild(field('最小起订量', p.trade, 'moq', { placeholder: '1 套' }));
+    tg.appendChild(field('供货能力', p.trade, 'supplyAbility', { placeholder: '100 套 / 月' }));
+    cp.appendChild(tg);
+    const tg2 = document.createElement('div'); tg2.className = 'grid2';
+    tg2.appendChild(field('发货期限', p.trade, 'deliveryTime', { placeholder: '5-8 work days' }));
+    tg2.appendChild(field('常规包装', p.trade, 'packaging', { placeholder: '木箱 / 托盘' }));
+    cp.appendChild(tg2);
+    cp.appendChild(csvField('付款方式（逗号分隔）', p.trade, 'payments', { placeholder: 'L/C, T/T, D/P, Western Union' }));
     const g4 = document.createElement('div'); g4.className = 'grid2';
     g4.appendChild(field('主按钮文字', p, 'ctaPrimary')); g4.appendChild(field('次按钮文字', p, 'ctaSecondary'));
     cp.appendChild(g4); sec.appendChild(cp);
@@ -390,6 +488,12 @@
     renderList(spc, p.specs, { label: (x, i) => '参数 ' + (i + 1), rerender: renderProducts, addLabel: '+ 参数', makeDefault: () => ({ k: '', v: '' }), fields: (x, host) => {
       const g = document.createElement('div'); g.className = 'grid2'; g.appendChild(field('名称', x, 'k', { placeholder: '最大厚度' })); g.appendChild(field('值', x, 'v', { placeholder: '1-5mm' })); host.appendChild(g);
     } }); cs.appendChild(spc); sec.appendChild(cs);
+
+    // 产品描述（富文本）
+    const cdesc = card('产品描述');
+    hint(cdesc, '富文本，可加粗/列表/链接等；显示在产品详情页下方。');
+    cdesc.appendChild(richEditor(p, 'description'));
+    sec.appendChild(cdesc);
 
     // 相关推荐
     const cr = card('相关推荐');
@@ -540,6 +644,70 @@
     renderList(c3, ch.replies, { label: (x, i) => '规则 ' + (i + 1), rerender: renderChat, addLabel: '+ 回复规则', makeDefault: () => ({ keywords: [], text: '' }), fields: (x, host) => {
       host.appendChild(csvField('关键词（逗号）', x, 'keywords')); host.appendChild(field('回复内容', x, 'text', { textarea: true, rows: 2 }));
     } }); sec.appendChild(c3);
+  }
+
+  // ============ 账号管理（多用户，仅管理员） ============
+  async function renderAccounts() {
+    const sec = $('#secAccounts'); sec.innerHTML = '';
+    if (!isAdmin()) { sec.innerHTML = '<div class="card" style="color:var(--muted)">仅管理员可管理账号。</div>'; return; }
+    if (acctEditing !== null) return renderAccountForm();
+    sec.innerHTML = '<div class="card" style="color:var(--muted)">加载中...</div>';
+    const users = await loadUsers(true);
+    const defL = data.i18n[data.defaultLang || (data.langs[0] && data.langs[0].code)] || {};
+    const prodCount = (u) => ((defL.products || []).filter((p) => p.owner === u.id || p.owner === u.username).length);
+    sec.innerHTML = '';
+    const c = card('账号列表');
+    hint(c, '主账号（管理员）可管理所有内容与账号；业务员/制作员登录后同样可编辑内容，可作为产品「负责人」。');
+    const addBtn = document.createElement('button'); addBtn.className = 'btn'; addBtn.textContent = '+ 新建账号'; addBtn.style.marginBottom = '0.8rem';
+    addBtn.addEventListener('click', () => { acctEditing = 'new'; renderAccounts(); });
+    c.appendChild(addBtn);
+    const table = document.createElement('table'); table.className = 'ptable';
+    table.innerHTML = '<thead><tr><th>账号名</th><th>姓名</th><th>角色</th><th>产品数</th><th>状态</th><th class="pt-ops">操作</th></tr></thead>';
+    const tb = document.createElement('tbody'); table.appendChild(tb);
+    users.forEach((u) => {
+      const tr = document.createElement('tr');
+      tr.innerHTML = '<td>' + esc(u.username) + '</td><td>' + esc(u.name) + '</td>' +
+        '<td><span class="badge-role ' + esc(u.role) + '">' + esc(ROLE_LABEL[u.role] || u.role) + '</span></td>' +
+        '<td>' + prodCount(u) + '</td>' +
+        '<td>' + (u.status === 'disabled' ? '<span class="badge-off">已停用</span>' : '正常') + '</td>' +
+        '<td class="pt-ops"></td>';
+      const ops = tr.querySelector('.pt-ops');
+      const bEdit = document.createElement('button'); bEdit.textContent = '编辑'; bEdit.addEventListener('click', () => { acctEditing = u; renderAccounts(); });
+      ops.appendChild(bEdit);
+      if (u.id !== me.id) {
+        const bTog = document.createElement('button'); bTog.textContent = u.status === 'disabled' ? '启用' : '停用';
+        bTog.addEventListener('click', async () => { await saveAccount({ id: u.id, username: u.username, name: u.name, role: u.role, status: u.status === 'disabled' ? 'active' : 'disabled' }); });
+        const bDel = document.createElement('button'); bDel.className = 'del'; bDel.textContent = '删除';
+        bDel.addEventListener('click', async () => { if (!confirm('删除账号 ' + u.username + '？')) return; const r = await fetch('/api/users', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: u.id }) }); const j = await r.json(); if (!r.ok) return toast(j.error || '删除失败', 'bad'); toast('已删除', 'ok'); usersCache = null; renderAccounts(); });
+        ops.appendChild(bTog); ops.appendChild(bDel);
+      }
+      tb.appendChild(tr);
+    });
+    c.appendChild(table); sec.appendChild(c);
+  }
+  function renderAccountForm() {
+    const sec = $('#secAccounts'); sec.innerHTML = '';
+    const isNew = acctEditing === 'new';
+    const u = isNew ? { username: '', name: '', role: 'sales', status: 'active' } : acctEditing;
+    const bar = document.createElement('div'); bar.style.cssText = 'margin-bottom:1rem';
+    const back = document.createElement('button'); back.className = 'btn ghost'; back.textContent = '← 返回账号列表'; back.addEventListener('click', () => { acctEditing = null; renderAccounts(); });
+    bar.appendChild(back); sec.appendChild(bar);
+    const c = card(isNew ? '新建账号' : '编辑账号：' + u.username);
+    const form = { username: u.username, name: u.name, role: u.role, status: u.status, password: '' };
+    c.appendChild(field('账号名（邮箱，用于登录）', form, 'username', { placeholder: 'vivi@company.com' }));
+    c.appendChild(field('用户姓名', form, 'name', { placeholder: 'Vivi' }));
+    c.appendChild(field('角色', form, 'role', { select: true, options: [{ value: 'admin', label: '管理员（全部权限）' }, { value: 'sales', label: '业务员' }, { value: 'editor', label: '制作员' }] }));
+    c.appendChild(field(isNew ? '密码（至少 6 位）' : '密码（留空则不修改）', form, 'password', { type: 'password' }));
+    c.appendChild(field('状态', form, 'status', { select: true, options: [{ value: 'active', label: '正常' }, { value: 'disabled', label: '停用' }] }));
+    const save = document.createElement('button'); save.className = 'btn'; save.textContent = '保存';
+    save.addEventListener('click', () => saveAccount(Object.assign({ id: isNew ? undefined : u.id }, form)));
+    c.appendChild(save); sec.appendChild(c);
+  }
+  async function saveAccount(payload) {
+    const r = await fetch('/api/users', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+    const j = await r.json();
+    if (!r.ok) return toast(j.error || '保存失败', 'bad');
+    toast('已保存', 'ok'); usersCache = null; acctEditing = null; renderAccounts();
   }
 
   function renderAccount() {
@@ -806,7 +974,7 @@
     });
   }
 
-  const RENDERERS = { dashboard: renderDashboard, brand: renderBrand, hero: renderHero, wizard: renderWizard, products: renderProducts, contact: renderContact, chat: renderChat, inbox: renderInbox, media: renderMedia, tools: renderTools, account: renderAccount };
+  const RENDERERS = { dashboard: renderDashboard, brand: renderBrand, hero: renderHero, wizard: renderWizard, products: renderProducts, contact: renderContact, chat: renderChat, inbox: renderInbox, media: renderMedia, tools: renderTools, accounts: renderAccounts, account: renderAccount };
   function renderSection(sec) { if (RENDERERS[sec]) RENDERERS[sec](); }
 
   function renderLangTabs() {
@@ -824,7 +992,9 @@
     $$('.menu-item').forEach((m) => m.classList.toggle('active', m.dataset.sec === sec));
     $$('.section').forEach((s) => s.classList.toggle('active', s.dataset.sec === sec));
     $('#secTitle').textContent = SEC_TITLES[sec] || '';
-    $('#langTabs').style.display = ['dashboard', 'inbox', 'media', 'account'].indexOf(sec) > -1 ? 'none' : '';
+    if (sec === 'products') editIdx = null;
+    if (sec === 'accounts') acctEditing = null;
+    $('#langTabs').style.display = ['dashboard', 'inbox', 'media', 'accounts', 'account'].indexOf(sec) > -1 ? 'none' : '';
     updatePreview();
     renderSection(sec);
   }
@@ -832,6 +1002,10 @@
   async function save() {
     const btn = $('#saveBtn'); btn.textContent = '保存中...'; btn.disabled = true;
     try {
+      // 编辑中的产品记更新时间
+      if (editIdx != null && data.i18n[lang] && data.i18n[lang].products && data.i18n[lang].products[editIdx]) {
+        data.i18n[lang].products[editIdx].updatedAt = Date.now();
+      }
       // 清除临时字段
       const clone = JSON.parse(JSON.stringify(data));
       Object.values(clone.i18n || {}).forEach((L) => (L.products || []).forEach((p) => { delete p._collapsed; delete p.breadcrumb; }));
@@ -845,6 +1019,7 @@
 
   function showLogin() { $('#loginView').classList.remove('hidden'); $('#appView').classList.add('hidden'); }
   function showApp() { $('#loginView').classList.add('hidden'); $('#appView').classList.remove('hidden'); }
+  function updateAccountsMenu() { const m = $('#menuAccounts'); if (m) m.style.display = isAdmin() ? '' : 'none'; }
 
   async function loadContent() {
     const res = await fetch('/api/admin/content'); data = await res.json();
@@ -852,7 +1027,9 @@
     data.langs = data.langs || [{ code: 'zh', label: '中文', dir: 'ltr' }];
     data.settings = data.settings || {};
     lang = data.defaultLang || (data.langs[0] && data.langs[0].code) || 'zh';
-    leadsCache = null; uploadsCache = null;
+    leadsCache = null; uploadsCache = null; usersCache = null;
+    await loadUsers(true).catch(() => {});
+    updateAccountsMenu();
     renderLangTabs(); switchSection('dashboard'); markClean();
     loadLeads(true).then(updateInboxBadge).catch(() => {});
   }
@@ -865,7 +1042,7 @@
     $('#logoutBtn').addEventListener('click', async () => { await fetch('/api/logout', { method: 'POST' }); showLogin(); });
     $('#loginForm').addEventListener('submit', async (e) => {
       e.preventDefault(); $('#loginErr').textContent = '';
-      try { const res = await fetch('/api/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username: $('#loginUser').value, password: $('#loginPass').value }) }); const j = await res.json(); if (!res.ok) throw new Error(j.error || '登录失败'); showApp(); await loadContent(); } catch (err) { $('#loginErr').textContent = err.message; }
+      try { const res = await fetch('/api/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username: $('#loginUser').value, password: $('#loginPass').value }) }); const j = await res.json(); if (!res.ok) throw new Error(j.error || '登录失败'); me = j.user || null; showApp(); await loadContent(); } catch (err) { $('#loginErr').textContent = err.message; }
     });
     document.addEventListener('keydown', (e) => { if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 's') { e.preventDefault(); if (!$('#appView').classList.contains('hidden')) save(); } });
     window.addEventListener('beforeunload', (e) => { if (dirty) { e.preventDefault(); e.returnValue = ''; } });
@@ -875,7 +1052,7 @@
     applyAdminTheme(currentThemeKey());
     bindGlobal();
     initThemeSel();
-    try { const res = await fetch('/api/session'); const j = await res.json(); if (j.authed) { showApp(); await loadContent(); } else showLogin(); } catch (e) { showLogin(); }
+    try { const res = await fetch('/api/session'); const j = await res.json(); if (j.authed) { me = j.user || null; showApp(); await loadContent(); } else showLogin(); } catch (e) { showLogin(); }
   }
   boot();
 })();

@@ -61,43 +61,57 @@ function initContent() {
   }
 }
 
+function defaultAdmin() {
+  return { id: 'u_admin', username: DEFAULT_USER, name: '管理员', role: 'admin', status: 'active', passwordHash: bcrypt.hashSync(DEFAULT_PASS, 10), createdAt: Date.now() };
+}
 function initConfig() {
   if (!fs.existsSync(CONFIG_FILE)) {
-    writeJson(CONFIG_FILE, {
-      username: DEFAULT_USER,
-      passwordHash: bcrypt.hashSync(DEFAULT_PASS, 10),
-    });
+    writeJson(CONFIG_FILE, { users: [defaultAdmin()] });
+    return;
+  }
+  // 迁移旧的单账号格式 -> users 数组
+  const cfg = readJson(CONFIG_FILE, {});
+  if (!Array.isArray(cfg.users)) {
+    cfg.users = [{ id: 'u_admin', username: cfg.username || DEFAULT_USER, name: '管理员', role: 'admin', status: 'active', passwordHash: cfg.passwordHash || bcrypt.hashSync(DEFAULT_PASS, 10), createdAt: Date.now() }];
+    delete cfg.username; delete cfg.passwordHash;
+    writeJson(CONFIG_FILE, cfg);
   }
 }
+function readUsers() { const c = readJson(CONFIG_FILE, {}); return Array.isArray(c.users) ? c.users : []; }
+function writeUsers(users) { const c = readJson(CONFIG_FILE, {}); c.users = users; writeJson(CONFIG_FILE, c); }
 
 ensureDirs();
 initContent();
 initConfig();
 
 // ---------- 会话（内存 token） ----------
-const sessions = new Map(); // token -> expires(ms)
+const sessions = new Map(); // token -> { exp, user }
 const SESSION_TTL = 1000 * 60 * 60 * 12; // 12 小时
 
-function createSession() {
+function createSession(user) {
   const token = crypto.randomBytes(24).toString('hex');
-  sessions.set(token, Date.now() + SESSION_TTL);
+  sessions.set(token, { exp: Date.now() + SESSION_TTL, user });
   return token;
 }
-
-function isValidSession(token) {
-  if (!token) return false;
-  const exp = sessions.get(token);
-  if (!exp) return false;
-  if (Date.now() > exp) {
-    sessions.delete(token);
-    return false;
-  }
-  return true;
+function getSession(token) {
+  if (!token) return null;
+  const s = sessions.get(token);
+  if (!s) return null;
+  if (Date.now() > s.exp) { sessions.delete(token); return null; }
+  return s;
 }
+function isValidSession(token) { return !!getSession(token); }
+function sessionUser(req) { const s = getSession(req.cookies && req.cookies.vg_token); return s ? s.user : null; }
 
 function requireAuth(req, res, next) {
-  if (isValidSession(req.cookies && req.cookies.vg_token)) return next();
+  const u = sessionUser(req);
+  if (u) { req.user = u; return next(); }
   return res.status(401).json({ error: '未登录或登录已过期' });
+}
+function requireAdmin(req, res, next) {
+  const u = sessionUser(req);
+  if (u && u.role === 'admin') { req.user = u; return next(); }
+  return res.status(403).json({ error: '需要管理员权限' });
 }
 
 // ---------- 中间件 ----------
@@ -124,19 +138,19 @@ const upload = multer({
 });
 
 // ---------- 认证 API ----------
+function pubUser(u) { return { id: u.id, username: u.username, name: u.name, role: u.role, status: u.status, createdAt: u.createdAt }; }
+
 app.post('/api/login', (req, res) => {
   const { username, password } = req.body || {};
-  const cfg = readJson(CONFIG_FILE, {});
-  const ok =
-    username === cfg.username && bcrypt.compareSync(String(password || ''), cfg.passwordHash || '');
-  if (!ok) return res.status(401).json({ error: '账号或密码错误' });
-  const token = createSession();
-  res.cookie('vg_token', token, {
-    httpOnly: true,
-    sameSite: 'lax',
-    maxAge: SESSION_TTL,
-  });
-  res.json({ ok: true });
+  const users = readUsers();
+  const u = users.find((x) => x.username === username);
+  if (!u || u.status === 'disabled' || !bcrypt.compareSync(String(password || ''), u.passwordHash || '')) {
+    return res.status(401).json({ error: '账号或密码错误（或已停用）' });
+  }
+  const su = { id: u.id, username: u.username, name: u.name, role: u.role };
+  const token = createSession(su);
+  res.cookie('vg_token', token, { httpOnly: true, sameSite: 'lax', maxAge: SESSION_TTL });
+  res.json({ ok: true, user: su });
 });
 
 app.post('/api/logout', (req, res) => {
@@ -147,20 +161,55 @@ app.post('/api/logout', (req, res) => {
 });
 
 app.get('/api/session', (req, res) => {
-  res.json({ authed: isValidSession(req.cookies && req.cookies.vg_token) });
+  const u = sessionUser(req);
+  res.json({ authed: !!u, user: u || null });
 });
 
 app.post('/api/password', requireAuth, (req, res) => {
   const { current, next } = req.body || {};
-  const cfg = readJson(CONFIG_FILE, {});
-  if (!bcrypt.compareSync(String(current || ''), cfg.passwordHash || '')) {
+  const users = readUsers();
+  const u = users.find((x) => x.id === req.user.id);
+  if (!u || !bcrypt.compareSync(String(current || ''), u.passwordHash || '')) {
     return res.status(400).json({ error: '当前密码不正确' });
   }
-  if (!next || String(next).length < 6) {
-    return res.status(400).json({ error: '新密码至少 6 位' });
+  if (!next || String(next).length < 6) return res.status(400).json({ error: '新密码至少 6 位' });
+  u.passwordHash = bcrypt.hashSync(String(next), 10);
+  writeUsers(users);
+  res.json({ ok: true });
+});
+
+// ---------- 账号管理 API（仅管理员） ----------
+app.get('/api/users', requireAdmin, (req, res) => {
+  res.json({ users: readUsers().map(pubUser) });
+});
+app.post('/api/users', requireAdmin, (req, res) => {
+  const b = req.body || {};
+  const users = readUsers();
+  const username = String(b.username || '').trim();
+  const role = ['admin', 'sales', 'editor'].indexOf(b.role) > -1 ? b.role : 'sales';
+  if (!username) return res.status(400).json({ error: '请填写账号名（邮箱）' });
+  let u = b.id ? users.find((x) => x.id === b.id) : null;
+  if (users.find((x) => x.username === username && (!u || x.id !== u.id))) return res.status(400).json({ error: '账号名已存在' });
+  if (u) {
+    u.username = username; u.name = String(b.name || '').trim() || username; u.role = role; u.status = b.status === 'disabled' ? 'disabled' : 'active';
+    if (b.password) { if (String(b.password).length < 6) return res.status(400).json({ error: '密码至少 6 位' }); u.passwordHash = bcrypt.hashSync(String(b.password), 10); }
+  } else {
+    if (!b.password || String(b.password).length < 6) return res.status(400).json({ error: '新账号密码至少 6 位' });
+    u = { id: 'u_' + crypto.randomBytes(5).toString('hex'), username, name: String(b.name || '').trim() || username, role, status: b.status === 'disabled' ? 'disabled' : 'active', passwordHash: bcrypt.hashSync(String(b.password), 10), createdAt: Date.now() };
+    users.push(u);
   }
-  cfg.passwordHash = bcrypt.hashSync(String(next), 10);
-  writeJson(CONFIG_FILE, cfg);
+  writeUsers(users);
+  res.json({ ok: true, user: pubUser(u) });
+});
+app.delete('/api/users', requireAdmin, (req, res) => {
+  const id = req.body && req.body.id;
+  let users = readUsers();
+  const u = users.find((x) => x.id === id);
+  if (!u) return res.status(404).json({ error: '账号不存在' });
+  if (u.id === req.user.id) return res.status(400).json({ error: '不能删除当前登录账号' });
+  if (u.role === 'admin' && users.filter((x) => x.role === 'admin').length <= 1) return res.status(400).json({ error: '至少保留一个管理员' });
+  users = users.filter((x) => x.id !== id);
+  writeUsers(users);
   res.json({ ok: true });
 });
 

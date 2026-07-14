@@ -290,3 +290,11 @@ footer p{font-size:0.82rem}
 .search-item .si-thumb img,.search-item .si-thumb video{width:100%;height:100%;object-fit:cover}
 .search-item .si-name{font-weight:600;font-size:0.92rem}
 .search-item .si-desc{font-size:0.78rem;color:var(--gray-500);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:440px}
+
+/* 产品描述（富文本） */
+.product-desc{font-size:0.92rem;color:var(--gray-700);line-height:1.8}
+.product-desc img{max-width:100%;border-radius:var(--radius-sm);margin:0.6rem 0}
+.product-desc h1,.product-desc h2,.product-desc h3{margin:1rem 0 0.5rem;color:var(--dark)}
+.product-desc ul,.product-desc ol{margin:0.5rem 0 0.5rem 1.5rem}
+.product-desc a{color:var(--primary);text-decoration:underline}
+.product-desc p{margin:0.5rem 0}

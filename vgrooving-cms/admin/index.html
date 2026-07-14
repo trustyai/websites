@@ -104,6 +104,35 @@ textarea.inp{resize:vertical;min-height:60px;line-height:1.5}
 .lead .lh .meta{font-size:0.75rem;color:var(--muted)}
 .lead .lh .acts{margin-left:auto;display:flex;gap:0.35rem}
 .lead .msg{font-size:0.88rem;color:var(--text);white-space:pre-wrap;line-height:1.5}
+/* 产品/账号表格 */
+.ptoolbar{display:flex;flex-wrap:wrap;gap:0.5rem;align-items:center;margin-bottom:0.9rem}
+.ptoolbar .inp{width:auto;min-width:150px}
+.ptoolbar .grow{flex:1}
+.ptoolbar .count{font-size:0.82rem;color:var(--muted)}
+.ptable{width:100%;border-collapse:collapse;font-size:0.88rem}
+.ptable th,.ptable td{text-align:left;padding:0.6rem 0.6rem;border-bottom:1px solid var(--border);vertical-align:middle}
+.ptable th{color:var(--muted);font-weight:600;font-size:0.78rem;white-space:nowrap}
+.ptable tr:hover td{background:var(--panel-2)}
+.ptable .pt-prod{display:flex;align-items:center;gap:0.7rem;min-width:220px}
+.ptable .pt-thumb{width:52px;height:38px;border-radius:6px;overflow:hidden;background:var(--panel-2);display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.ptable .pt-thumb img{width:100%;height:100%;object-fit:cover}
+.ptable .pt-name{font-weight:600;cursor:pointer}
+.ptable .pt-sub{font-size:0.74rem;color:var(--muted)}
+.ptable .pt-ops{white-space:nowrap}
+.ptable .pt-ops button{background:none;border:none;color:var(--brand);font-size:0.82rem;cursor:pointer;padding:0 0.35rem}
+.ptable .pt-ops button.del{color:var(--danger)}
+.ptable .pt-ops button:hover{text-decoration:underline}
+.badge-role{font-size:0.68rem;padding:0.05rem 0.45rem;border-radius:50px;font-weight:600}
+.badge-role.admin{background:rgba(229,72,77,0.16);color:#e5484d}
+.badge-role.sales{background:rgba(35,172,56,0.16);color:var(--brand)}
+.badge-role.editor{background:rgba(47,107,255,0.16);color:#5b8cff}
+.badge-off{font-size:0.68rem;padding:0.05rem 0.45rem;border-radius:50px;background:var(--panel);color:var(--muted)}
+/* 富文本编辑器 */
+.rte-tb{display:flex;flex-wrap:wrap;gap:0.2rem;background:var(--panel-2);border:1px solid var(--border);border-bottom:none;border-radius:var(--radius) var(--radius) 0 0;padding:0.35rem}
+.rte-tb button{background:var(--panel);border:1px solid var(--border);color:var(--text);width:30px;height:28px;border-radius:5px;font-size:0.82rem;cursor:pointer}
+.rte-tb button:hover{border-color:var(--brand)}
+.rte-area{min-height:160px;max-height:420px;overflow-y:auto;background:var(--panel-2);border:1px solid var(--border);border-radius:0 0 var(--radius) var(--radius);padding:0.7rem 0.9rem;font-size:0.9rem;line-height:1.6;color:var(--text)}
+.rte-area:focus{outline:none;border-color:var(--brand)}
 .plist-row{display:flex;align-items:center;gap:0.9rem;padding:0.7rem;border:1px solid var(--border);border-radius:var(--radius);margin-bottom:0.6rem;background:var(--panel-2)}
 .plist-row .pl-thumb{width:64px;height:44px;border-radius:6px;overflow:hidden;background:var(--panel);display:flex;align-items:center;justify-content:center;font-size:1.2rem;flex-shrink:0}
 .plist-row .pl-thumb img{width:100%;height:100%;object-fit:cover}
@@ -160,6 +189,7 @@ textarea.inp{resize:vertical;min-height:60px;line-height:1.5}
       <div class="menu-item" data-sec="inbox"><span class="ico">📥</span><span>收件箱 <span id="inboxBadge"></span></span></div>
       <div class="menu-item" data-sec="media"><span class="ico">🖼️</span><span>媒体库</span></div>
       <div class="menu-item" data-sec="tools"><span class="ico">🧰</span><span>翻译与备份</span></div>
+      <div class="menu-item" data-sec="accounts" id="menuAccounts"><span class="ico">👥</span><span>账号管理</span></div>
       <div class="menu-item" data-sec="account"><span class="ico">🔒</span><span>账号安全</span></div>
     </nav>
     <div class="foot">
@@ -188,6 +218,7 @@ textarea.inp{resize:vertical;min-height:60px;line-height:1.5}
       <div class="section" data-sec="inbox" id="secInbox"></div>
       <div class="section" data-sec="media" id="secMedia"></div>
       <div class="section" data-sec="tools" id="secTools"></div>
+      <div class="section" data-sec="accounts" id="secAccounts"></div>
       <div class="section" data-sec="account" id="secAccount"></div>
     </div>
   </main>
