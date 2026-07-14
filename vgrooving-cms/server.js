@@ -381,27 +381,59 @@ app.post('/api/leads', (req, res) => {
   const name = String(b.name || '').slice(0, 100).trim();
   const message = String(b.message || '').slice(0, 3000).trim();
   if (!name && !b.email) return res.status(400).json({ error: '请至少填写姓名或邮箱' });
+  // 若来自产品详情页，自动归属到该产品的负责人
+  let owner = '', product = '';
+  const m = String(b.page || '').match(/\/products\/([^/?#]+)/);
+  if (m) {
+    const slug = decodeURIComponent(m[1]).replace(/\.html?$/i, '');
+    const content = readJson(CONTENT_FILE, {});
+    for (const code of Object.keys(content.i18n || {})) {
+      const p = (content.i18n[code].products || []).find((x) => (x.slug || x.id) === slug);
+      if (p) { owner = p.owner || ''; product = p.name || slug; break; }
+    }
+  }
   const lead = {
     id: crypto.randomBytes(8).toString('hex'),
     name, email: String(b.email || '').slice(0, 160).trim(),
     company: String(b.company || '').slice(0, 160).trim(),
     message, lang: String(b.lang || '').slice(0, 8), page: String(b.page || '').slice(0, 300),
-    time: Date.now(), read: false, ip,
+    owner, product, time: Date.now(), read: false, ip,
   };
   const leads = readLeads(); leads.unshift(lead); writeJson(LEADS_FILE, leads);
   notifyWebhook(lead);
   sendLeadEmail(lead);
   res.json({ ok: true });
 });
-app.get('/api/leads', requireAuth, (req, res) => res.json({ leads: readLeads() }));
+// 询盘可见性：管理员全部；业务员仅自己负责；制作员无（只发布产品）
+function leadsForUser(user) {
+  const leads = readLeads();
+  if (user.role === 'admin') return leads;
+  if (user.role === 'sales') return leads.filter((l) => l.owner === user.id);
+  return []; // editor / 其它
+}
+function canTouchLead(user, lead) {
+  if (!lead) return false;
+  if (user.role === 'admin') return true;
+  if (user.role === 'sales') return lead.owner === user.id;
+  return false;
+}
+app.get('/api/leads', requireAuth, (req, res) => res.json({ leads: leadsForUser(req.user) }));
 app.post('/api/leads/read', requireAuth, (req, res) => {
-  const id = req.body && req.body.id; const leads = readLeads();
-  const it = leads.find((l) => l.id === id); if (it) it.read = !!(req.body.read);
-  writeJson(LEADS_FILE, leads); res.json({ ok: true });
+  const leads = readLeads();
+  const it = leads.find((l) => l.id === (req.body && req.body.id));
+  if (it && canTouchLead(req.user, it)) { it.read = !!(req.body.read); writeJson(LEADS_FILE, leads); }
+  res.json({ ok: true });
+});
+app.post('/api/leads/assign', requireAdmin, (req, res) => {
+  const leads = readLeads();
+  const it = leads.find((l) => l.id === (req.body && req.body.id));
+  if (it) { it.owner = String((req.body && req.body.owner) || ''); writeJson(LEADS_FILE, leads); }
+  res.json({ ok: true });
 });
 app.delete('/api/leads', requireAuth, (req, res) => {
-  const id = req.body && req.body.id; let leads = readLeads();
-  if (req.body && req.body.all) leads = []; else leads = leads.filter((l) => l.id !== id);
+  let leads = readLeads();
+  if (req.body && req.body.all) { if (req.user.role !== 'admin') return res.status(403).json({ error: '无权限' }); leads = []; }
+  else { const it = leads.find((l) => l.id === (req.body && req.body.id)); if (it && !canTouchLead(req.user, it)) return res.status(403).json({ error: '无权限' }); leads = leads.filter((l) => l.id !== (req.body && req.body.id)); }
   writeJson(LEADS_FILE, leads); res.json({ ok: true });
 });
 

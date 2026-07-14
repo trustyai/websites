@@ -964,7 +964,9 @@
     const c1 = card('概览');
     const g = document.createElement('div'); g.className = 'stat-grid';
     const stat = (n, l) => '<div class="stat"><div class="n">' + n + '</div><div class="l">' + l + '</div></div>';
-    g.innerHTML = stat(langs.length, '语言') + stat((defL.products || []).length, '产品(默认语言)') + stat(files.length, '媒体文件') + stat(unread, '未读询价');
+    const now = new Date();
+    const newThisMonth = (defL.products || []).filter((p) => { if (!p.createdAt) return false; const d = new Date(p.createdAt); return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth(); }).length;
+    g.innerHTML = stat((defL.products || []).filter((p) => !p.deleted).length, '产品数') + stat(newThisMonth, '本月新增产品') + stat(files.length, '媒体文件') + stat(leads.length, '累计询盘') + stat(unread, '未读询盘') + stat(langs.length, '语言');
     c1.appendChild(g);
     const quick = document.createElement('div'); quick.className = 'quick';
     langs.forEach((l) => { const a = document.createElement('a'); a.className = 'btn ghost'; a.target = '_blank'; a.href = (l.code === (data.defaultLang || 'zh') ? '/' : '/' + l.code); a.textContent = '🔎 ' + (l.label || l.code); quick.appendChild(a); });
@@ -1012,38 +1014,56 @@
     sec.appendChild(c2);
   }
 
-  // ============ 收件箱 ============
+  // ============ 收件箱 / 商机（询盘） ============
   async function renderInbox() {
     const sec = $('#secInbox'); sec.innerHTML = '';
-    const c = card('询价 / 留言');
+    const c = card('商机 / 询盘');
+    hint(c, me && me.role === 'sales' ? '这里只显示分配给你的询盘。' : '来自产品详情页的询盘会自动归属该产品的负责人；也可在「负责人」下拉里手动分配，业务员只能看到分给自己的询盘。');
     const bar = document.createElement('div'); bar.style.cssText = 'display:flex;gap:0.5rem;margin-bottom:0.8rem';
-    const refresh = document.createElement('button'); refresh.className = 'btn ghost'; refresh.textContent = '↻ 刷新'; refresh.addEventListener('click', () => renderInbox());
+    const refresh = document.createElement('button'); refresh.className = 'btn ghost'; refresh.textContent = '↻ 刷新'; refresh.addEventListener('click', () => { leadsCache = null; renderInbox(); });
     const exp = document.createElement('button'); exp.className = 'btn ghost'; exp.textContent = '导出 CSV';
     bar.appendChild(refresh); bar.appendChild(exp); c.appendChild(bar);
-    const listHost = document.createElement('div'); listHost.innerHTML = '<div style="color:var(--muted)">加载中...</div>'; c.appendChild(listHost);
+    const host = document.createElement('div'); host.innerHTML = '<div style="color:var(--muted)">加载中...</div>'; c.appendChild(host);
     sec.appendChild(c);
     const leads = await loadLeads(true); updateInboxBadge();
+    const canAssign = isAdmin();
     exp.addEventListener('click', () => {
-      const rows = [['时间', '姓名', '邮箱', '公司', '语言', '页面', '内容']].concat(leads.map((l) => [new Date(l.time).toLocaleString(), l.name, l.email, l.company, l.lang, l.page, (l.message || '').replace(/\n/g, ' ')]));
+      const rows = [['时间', '姓名', '邮箱', '公司', '产品', '语言', '负责人', '内容']].concat(leads.map((l) => [new Date(l.time).toLocaleString(), l.name, l.email, l.company, l.product, l.lang, ownerName(l.owner), (l.message || '').replace(/\n/g, ' ')]));
       const csv = '\ufeff' + rows.map((r) => r.map((x) => '"' + String(x == null ? '' : x).replace(/"/g, '""') + '"').join(',')).join('\n');
       const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' })); a.download = 'leads.csv'; a.click();
     });
-    if (!leads.length) { listHost.innerHTML = '<div style="color:var(--muted)">还没有收到询价。前台联系页的表单提交后会显示在这里。</div>'; return; }
-    listHost.innerHTML = '';
+    if (!leads.length) { host.innerHTML = '<div style="color:var(--muted)">暂无询盘。前台联系页/产品页提交后会显示在这里。</div>'; return; }
+    host.innerHTML = '';
+    const table = document.createElement('table'); table.className = 'ptable';
+    table.innerHTML = '<thead><tr><th>询盘 / 买家</th><th>负责人</th><th>发送时间</th><th class="pt-ops">操作</th></tr></thead>';
+    const tb = document.createElement('tbody'); table.appendChild(tb);
     leads.forEach((l) => {
-      const el = document.createElement('div'); el.className = 'lead' + (l.read ? '' : ' unread');
-      const contact = [l.email, l.company].filter(Boolean).join(' · ');
-      el.innerHTML = '<div class="lh"><b>' + esc(l.name || '(未填姓名)') + '</b>' +
-        (contact ? '<span class="meta">' + esc(contact) + '</span>' : '') +
-        '<span class="meta">' + esc(new Date(l.time).toLocaleString()) + ' · ' + esc(l.lang || '') + '</span><span class="acts"></span></div>' +
-        '<div class="msg">' + esc(l.message || '') + '</div>';
-      const acts = el.querySelector('.acts');
-      const rd = document.createElement('button'); rd.className = 'icon-btn'; rd.textContent = l.read ? '↺' : '✓'; rd.title = l.read ? '标为未读' : '标为已读';
+      const tr = document.createElement('tr'); if (!l.read) tr.style.fontWeight = '500';
+      const buyer = [l.email, l.company].filter(Boolean).join(' · ');
+      tr.innerHTML =
+        '<td style="max-width:420px">' + (l.read ? '' : '<span style="color:var(--brand)">● </span>') + '<b>' + esc(l.name || '(未填姓名)') + '</b>' +
+        (l.product ? ' <span class="pt-sub">· ' + esc(l.product) + '</span>' : '') +
+        (buyer ? '<div class="pt-sub">' + esc(buyer) + '</div>' : '') +
+        '<div class="msg" style="font-size:0.85rem;white-space:pre-wrap;margin-top:0.2rem">' + esc(l.message || '') + '</div></td>' +
+        '<td class="pt-owner"></td>' +
+        '<td class="pt-sub">' + esc(new Date(l.time).toLocaleString()) + '</td>' +
+        '<td class="pt-ops"></td>';
+      const ownerTd = tr.querySelector('.pt-owner');
+      if (canAssign) {
+        const sel = document.createElement('select'); sel.className = 'inp'; sel.style.minWidth = '110px';
+        sel.innerHTML = '<option value="">未分配</option>' + (usersCache || []).filter((u) => u.role !== 'editor').map((u) => '<option value="' + esc(u.id) + '"' + (l.owner === u.id ? ' selected' : '') + '>' + esc(u.name) + '</option>').join('');
+        sel.addEventListener('change', async () => { await fetch('/api/leads/assign', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: l.id, owner: sel.value }) }); l.owner = sel.value; toast('已分配', 'ok'); });
+        ownerTd.appendChild(sel);
+      } else { ownerTd.textContent = ownerName(l.owner); }
+      const ops = tr.querySelector('.pt-ops');
+      const rd = document.createElement('button'); rd.textContent = l.read ? '标未读' : '标已读';
       rd.addEventListener('click', async () => { await fetch('/api/leads/read', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: l.id, read: !l.read }) }); leadsCache = null; renderInbox(); });
-      const del = document.createElement('button'); del.className = 'icon-btn del'; del.textContent = '✕';
-      del.addEventListener('click', async () => { if (!confirm('删除该条询价？')) return; await fetch('/api/leads', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: l.id }) }); leadsCache = null; renderInbox(); });
-      acts.appendChild(rd); acts.appendChild(del); listHost.appendChild(el);
+      const del = document.createElement('button'); del.className = 'del'; del.textContent = '删除';
+      del.addEventListener('click', async () => { if (!confirm('删除该条询盘？')) return; await fetch('/api/leads', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: l.id }) }); leadsCache = null; renderInbox(); });
+      ops.appendChild(rd); ops.appendChild(del);
+      tb.appendChild(tr);
     });
+    host.appendChild(table);
   }
 
   const RENDERERS = { dashboard: renderDashboard, brand: renderBrand, hero: renderHero, wizard: renderWizard, products: renderProducts, contact: renderContact, chat: renderChat, inbox: renderInbox, media: renderMedia, tools: renderTools, accounts: renderAccounts, account: renderAccount };
@@ -1093,8 +1113,8 @@
   function showApp() { $('#loginView').classList.add('hidden'); $('#appView').classList.remove('hidden'); }
   function allowedSecs() {
     if (!me || me.role === 'admin') return null; // 全部
-    if (me.role === 'editor') return ['dashboard', 'brand', 'hero', 'wizard', 'products', 'contact', 'chat', 'inbox', 'media', 'tools', 'account'];
-    return ['dashboard', 'products', 'media', 'account']; // 业务员
+    if (me.role === 'editor') return ['dashboard', 'brand', 'hero', 'wizard', 'products', 'contact', 'chat', 'media', 'tools', 'account']; // 制作员：看不到询盘(收件箱)
+    return ['dashboard', 'products', 'inbox', 'media', 'account']; // 业务员：含自己的询盘
   }
   function updateMenusForRole() {
     const allow = allowedSecs();
