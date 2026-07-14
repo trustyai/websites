@@ -12,6 +12,21 @@
   let usersCache = null;
   let acctEditing = null; // 账号管理：null=列表，'new' 或 用户对象=编辑表单
   const prodFilter = { q: '', cat: '', owner: '' };
+  let prodTab = 'normal'; // normal | featured | deleted
+
+  // 通用选择弹窗：返回 Promise<选中值 | null>
+  function chooseModal(title, options) {
+    return new Promise((resolve) => {
+      const mask = document.createElement('div'); mask.className = 'picker-mask';
+      mask.innerHTML = '<div class="picker-box" style="width:min(420px,92vw)"><div class="picker-head"><b>' + esc(title) + '</b><button class="icon-btn" data-x>✕</button></div><div style="padding:1rem"><select class="inp" data-sel>' + options.map((o) => '<option value="' + esc(o.value) + '">' + esc(o.label) + '</option>').join('') + '</select><div style="margin-top:1rem;display:flex;gap:0.5rem;justify-content:flex-end"><button class="btn ghost" data-cancel>取消</button><button class="btn" data-ok>确定</button></div></div></div>';
+      document.body.appendChild(mask);
+      const done = (v) => { mask.remove(); resolve(v); };
+      mask.querySelector('[data-x]').addEventListener('click', () => done(null));
+      mask.querySelector('[data-cancel]').addEventListener('click', () => done(null));
+      mask.querySelector('[data-ok]').addEventListener('click', () => done(mask.querySelector('[data-sel]').value));
+      mask.addEventListener('click', (e) => { if (e.target === mask) done(null); });
+    });
+  }
 
   async function loadUsers(force) {
     if (usersCache && !force) return usersCache;
@@ -281,53 +296,106 @@
   function ownerName(id) { if (!id) return '—'; const u = (usersCache || []).find((x) => x.id === id || x.username === id); return u ? u.name : id; }
   function fmtTime(ms) { if (!ms) return '—'; const d = new Date(ms); const p = (n) => (n < 10 ? '0' + n : n); return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()) + ' ' + p(d.getHours()) + ':' + p(d.getMinutes()); }
 
+  function canAll() { return me && (me.role === 'admin' || me.role === 'editor'); }
+  function getCats() { const l = L(); l.categories = l.categories || []; return l.categories; }
+
+  // 分类管理卡片（一级 + 二级），仅管理员/制作员
+  function renderCategoryManager(sec) {
+    const l = L(); l.categories = l.categories || [];
+    const c = card('产品分类管理');
+    hint(c, '在这里维护产品分类（可含二级分类）；发布产品时从下拉选择，无需每次手填。二级分类用逗号分隔。');
+    renderList(c, l.categories, {
+      label: (x, i) => '分类 ' + (i + 1), rerender: renderProducts, addLabel: '+ 添加分类', makeDefault: () => ({ name: '新分类', subs: [] }),
+      fields: (x, host) => { host.appendChild(field('分类名称', x, 'name')); host.appendChild(csvField('二级分类（逗号分隔，可留空）', x, 'subs')); },
+    });
+    sec.appendChild(c);
+  }
+
   // ---------- 产品列表（表格） ----------
   function renderProductList(l) {
     const sec = $('#secProducts'); sec.innerHTML = '';
-    const c1 = card('【' + lang + '】板块文案');
-    c1.appendChild(field('标签', l.productsSection, 'tag'));
-    c1.appendChild(field('标题', l.productsSection, 'title', { textarea: true, rows: 2, hint: '换行用回车，*星号*高亮' }));
-    c1.appendChild(field('副标题', l.productsSection, 'subtitle'));
-    sec.appendChild(c1);
+    if (canAll()) {
+      const c1 = card('【' + lang + '】板块文案');
+      c1.appendChild(field('标签', l.productsSection, 'tag'));
+      c1.appendChild(field('标题', l.productsSection, 'title', { textarea: true, rows: 2, hint: '换行用回车，*星号*高亮' }));
+      c1.appendChild(field('副标题', l.productsSection, 'subtitle'));
+      sec.appendChild(c1);
+      renderCategoryManager(sec);
+    }
 
     const c2 = card('产品列表');
-    // 工具栏
-    const cats = [...new Set(l.products.map((p) => p.category).filter(Boolean))];
+    const catNames = getCats().map((c) => c.name);
     const owners = [...new Set(l.products.map((p) => p.owner).filter(Boolean))];
+
+    // 标签页：普通 / 卖点 / 已删除
+    const counts = { normal: l.products.filter((p) => !p.deleted).length, featured: l.products.filter((p) => !p.deleted && p.featured).length, deleted: l.products.filter((p) => p.deleted).length };
+    const tabs = document.createElement('div'); tabs.className = 'ptabs';
+    [['normal', '普通产品'], ['featured', '卖点产品'], ['deleted', '已删除']].forEach(([k, lbl]) => {
+      const b = document.createElement('button'); b.className = 'ptab' + (prodTab === k ? ' active' : ''); b.textContent = lbl + ' (' + counts[k] + ')';
+      b.addEventListener('click', () => { prodTab = k; renderProducts(); });
+      tabs.appendChild(b);
+    });
+    c2.appendChild(tabs);
+
+    // 工具栏
     const tb = document.createElement('div'); tb.className = 'ptoolbar';
-    const searchInp = document.createElement('input'); searchInp.className = 'inp'; searchInp.placeholder = '搜索产品名称…'; searchInp.value = prodFilter.q;
-    const catSel = document.createElement('select'); catSel.className = 'inp'; catSel.innerHTML = '<option value="">所有分类</option>' + cats.map((c) => '<option' + (prodFilter.cat === c ? ' selected' : '') + '>' + esc(c) + '</option>').join('');
-    const ownerSel = document.createElement('select'); ownerSel.className = 'inp'; ownerSel.innerHTML = '<option value="">所有负责人</option>' + owners.map((o) => '<option value="' + esc(o) + '"' + (prodFilter.owner === o ? ' selected' : '') + '>' + esc(ownerName(o)) + '</option>').join('');
-    const bulkBtn = document.createElement('button'); bulkBtn.className = 'btn ghost'; bulkBtn.textContent = '批量删除';
+    const searchInp = document.createElement('input'); searchInp.className = 'inp'; searchInp.placeholder = '搜索产品名称/ID…'; searchInp.value = prodFilter.q;
+    const catSel = document.createElement('select'); catSel.className = 'inp'; catSel.innerHTML = '<option value="">所有分类</option>' + catNames.map((c) => '<option' + (prodFilter.cat === c ? ' selected' : '') + '>' + esc(c) + '</option>').join('');
+    tb.appendChild(searchInp); tb.appendChild(catSel);
+    let ownerSel = null;
+    if (canAll()) { ownerSel = document.createElement('select'); ownerSel.className = 'inp'; ownerSel.innerHTML = '<option value="">所有负责人</option>' + owners.map((o) => '<option value="' + esc(o) + '"' + (prodFilter.owner === o ? ' selected' : '') + '>' + esc(ownerName(o)) + '</option>').join(''); tb.appendChild(ownerSel); }
     const count = document.createElement('span'); count.className = 'count';
     const grow = document.createElement('span'); grow.className = 'grow';
-    const exBtn = document.createElement('button'); exBtn.className = 'btn ghost'; exBtn.textContent = '⬇ 导出'; exBtn.addEventListener('click', exportExcel);
-    const imLabel = document.createElement('label'); imLabel.className = 'btn ghost'; imLabel.textContent = '⬆ 导入'; const imFi = document.createElement('input'); imFi.type = 'file'; imFi.accept = '.xlsx,.xls,.csv'; imFi.className = 'hidden'; imFi.addEventListener('change', () => { if (imFi.files[0]) importExcel(imFi.files[0]); imFi.value = ''; }); imLabel.appendChild(imFi);
-    const pubBtn = document.createElement('button'); pubBtn.className = 'btn'; pubBtn.textContent = '发布新产品';
-    tb.appendChild(searchInp); tb.appendChild(catSel); tb.appendChild(ownerSel); tb.appendChild(bulkBtn); tb.appendChild(count); tb.appendChild(grow); tb.appendChild(exBtn); tb.appendChild(imLabel); tb.appendChild(pubBtn);
+    tb.appendChild(count); tb.appendChild(grow);
+    if (canAll()) { const exBtn = document.createElement('button'); exBtn.className = 'btn ghost'; exBtn.textContent = '⬇ 导出'; exBtn.addEventListener('click', exportExcel); const imLabel = document.createElement('label'); imLabel.className = 'btn ghost'; imLabel.textContent = '⬆ 导入'; const imFi = document.createElement('input'); imFi.type = 'file'; imFi.accept = '.xlsx,.xls,.csv'; imFi.className = 'hidden'; imFi.addEventListener('change', () => { if (imFi.files[0]) importExcel(imFi.files[0]); imFi.value = ''; }); imLabel.appendChild(imFi); tb.appendChild(exBtn); tb.appendChild(imLabel); }
+    const pubBtn = document.createElement('button'); pubBtn.className = 'btn'; pubBtn.textContent = '发布新产品'; tb.appendChild(pubBtn);
     c2.appendChild(tb);
+
+    // 批量操作栏
+    const bulk = document.createElement('div'); bulk.className = 'ptoolbar';
+    const mkBulk = (label, cls, fn) => { const b = document.createElement('button'); b.className = 'btn ' + (cls || 'ghost'); b.textContent = label; b.addEventListener('click', fn); return b; };
+    const checkedIdx = () => Array.from(tbody.querySelectorAll('tr')).filter((tr) => tr.style.display !== 'none' && tr.querySelector('.pchk').checked).map((tr) => +tr.dataset.idx);
+    if (prodTab === 'deleted') {
+      bulk.appendChild(mkBulk('恢复所选', '', () => { const ix = checkedIdx(); if (!ix.length) return toast('请先勾选', 'bad'); ix.forEach((i) => { l.products[i].deleted = false; }); markDirty(); renderProducts(); }));
+      bulk.appendChild(mkBulk('彻底删除', 'ghost', () => { const ix = checkedIdx().sort((a, b) => b - a); if (!ix.length) return toast('请先勾选', 'bad'); if (!confirm('彻底删除选中的 ' + ix.length + ' 个产品？不可恢复')) return; ix.forEach((i) => l.products.splice(i, 1)); markDirty(); renderProducts(); }));
+    } else {
+      bulk.appendChild(mkBulk('调整分类', '', async () => { const ix = checkedIdx(); if (!ix.length) return toast('请先勾选', 'bad'); const v = await chooseModal('批量调整分类', [{ value: '', label: '（清空分类）' }].concat(catNames.map((c) => ({ value: c, label: c })))); if (v === null) return; ix.forEach((i) => { l.products[i].category = v; }); markDirty(); renderProducts(); }));
+      if (canAll()) bulk.appendChild(mkBulk('调整负责人', '', async () => { const ix = checkedIdx(); if (!ix.length) return toast('请先勾选', 'bad'); const v = await chooseModal('批量调整负责人', [{ value: '', label: '未分配' }].concat((usersCache || []).map((u) => ({ value: u.id, label: u.name })))); if (v === null) return; ix.forEach((i) => { l.products[i].owner = v; }); markDirty(); renderProducts(); }));
+      bulk.appendChild(mkBulk(prodTab === 'featured' ? '取消卖点' : '设为卖点', '', () => { const ix = checkedIdx(); if (!ix.length) return toast('请先勾选', 'bad'); ix.forEach((i) => { l.products[i].featured = prodTab !== 'featured'; }); markDirty(); renderProducts(); }));
+      bulk.appendChild(mkBulk('删除所选', 'ghost', () => { const ix = checkedIdx(); if (!ix.length) return toast('请先勾选', 'bad'); if (!confirm('删除选中的 ' + ix.length + ' 个产品？（进入「已删除」可恢复）')) return; ix.forEach((i) => { l.products[i].deleted = true; }); markDirty(); renderProducts(); }));
+    }
+    c2.appendChild(bulk);
 
     // 表格
     const table = document.createElement('table'); table.className = 'ptable';
-    table.innerHTML = '<thead><tr><th><input type="checkbox" id="pAll"></th><th>产品</th><th>负责人</th><th>更新时间</th><th class="pt-ops">操作</th></tr></thead>';
+    table.innerHTML = '<thead><tr><th><input type="checkbox" id="pAll"></th><th>产品图片</th><th>产品</th>' + (canAll() ? '<th>负责人</th>' : '') + '<th>发布时间</th><th>更新时间</th><th class="pt-ops">操作</th></tr></thead>';
     const tbody = document.createElement('tbody'); table.appendChild(tbody);
     l.products.forEach((p, i) => {
+      const inTab = prodTab === 'deleted' ? p.deleted : (prodTab === 'featured' ? (!p.deleted && p.featured) : !p.deleted);
+      if (!inTab) return;
       const cover = p.cardImage || (p.gallery && p.gallery[0] && p.gallery[0].src) || '';
       const tr = document.createElement('tr'); tr.dataset.idx = i;
-      tr.dataset.name = (p.name || '').toLowerCase(); tr.dataset.cat = p.category || ''; tr.dataset.owner = p.owner || '';
+      tr.dataset.name = ((p.name || '') + ' ' + (p.slug || '') + ' ' + (p.id || '')).toLowerCase(); tr.dataset.cat = p.category || ''; tr.dataset.owner = p.owner || '';
       tr.innerHTML =
         '<td><input type="checkbox" class="pchk"></td>' +
-        '<td><div class="pt-prod"><div class="pt-thumb">' + (cover ? '<img src="' + esc(cover) + '">' : '📦') + '</div>' +
-        '<div><div class="pt-name">' + esc(p.name || '(未命名)') + '</div><div class="pt-sub">' + (p.category ? esc(p.category) + ' · ' : '') + '/' + esc(p.slug || p.id || '') + ' · 图集' + ((p.gallery || []).length) + '</div></div></div></td>' +
-        '<td>' + esc(ownerName(p.owner)) + '</td>' +
+        '<td><div class="pt-thumb">' + (cover ? '<img src="' + esc(cover) + '">' : '📦') + '</div></td>' +
+        '<td><div class="pt-name">' + esc(p.name || '(未命名)') + (p.featured ? ' ⭐' : '') + '</div><div class="pt-sub">' + (p.category ? esc(p.category) + (p.subCategory ? ' / ' + esc(p.subCategory) : '') + ' · ' : '') + '/' + esc(p.slug || p.id || '') + '</div></td>' +
+        (canAll() ? '<td>' + esc(ownerName(p.owner)) + '</td>' : '') +
+        '<td class="pt-sub">' + fmtTime(p.createdAt) + '</td>' +
         '<td class="pt-sub">' + fmtTime(p.updatedAt || p.createdAt) + '</td>' +
         '<td class="pt-ops"></td>';
       const ops = tr.querySelector('.pt-ops');
-      const bEdit = document.createElement('button'); bEdit.textContent = '编辑'; bEdit.addEventListener('click', () => { editIdx = i; renderProducts(); window.scrollTo(0, 0); });
-      const bCopy = document.createElement('button'); bCopy.textContent = '复制'; bCopy.addEventListener('click', () => duplicateProduct(l.products, i));
-      const bDel = document.createElement('button'); bDel.className = 'del'; bDel.textContent = '删除'; bDel.addEventListener('click', () => { if (confirm('删除产品「' + (p.name || '') + '」？')) { l.products.splice(i, 1); markDirty(); renderProducts(); } });
-      ops.appendChild(bEdit); ops.appendChild(bCopy); ops.appendChild(bDel);
-      tr.querySelector('.pt-name').addEventListener('click', () => { editIdx = i; renderProducts(); window.scrollTo(0, 0); });
+      if (prodTab === 'deleted') {
+        const bR = document.createElement('button'); bR.textContent = '恢复'; bR.addEventListener('click', () => { p.deleted = false; markDirty(); renderProducts(); });
+        const bP = document.createElement('button'); bP.className = 'del'; bP.textContent = '彻底删除'; bP.addEventListener('click', () => { if (confirm('彻底删除「' + (p.name || '') + '」？不可恢复')) { l.products.splice(i, 1); markDirty(); renderProducts(); } });
+        ops.appendChild(bR); ops.appendChild(bP);
+      } else {
+        const bEdit = document.createElement('button'); bEdit.textContent = '编辑'; bEdit.addEventListener('click', () => { editIdx = i; renderProducts(); window.scrollTo(0, 0); });
+        const bCopy = document.createElement('button'); bCopy.textContent = '复制'; bCopy.addEventListener('click', () => duplicateProduct(l.products, i));
+        const bDel = document.createElement('button'); bDel.className = 'del'; bDel.textContent = '删除'; bDel.addEventListener('click', () => { if (confirm('删除产品「' + (p.name || '') + '」？（进入「已删除」可恢复）')) { p.deleted = true; markDirty(); renderProducts(); } });
+        ops.appendChild(bEdit); ops.appendChild(bCopy); ops.appendChild(bDel);
+        tr.querySelector('.pt-name').addEventListener('click', () => { editIdx = i; renderProducts(); window.scrollTo(0, 0); });
+      }
       tbody.appendChild(tr);
     });
     c2.appendChild(table);
@@ -343,16 +411,10 @@
     }
     searchInp.addEventListener('input', () => { prodFilter.q = searchInp.value; applyFilter(); });
     catSel.addEventListener('change', () => { prodFilter.cat = catSel.value; applyFilter(); });
-    ownerSel.addEventListener('change', () => { prodFilter.owner = ownerSel.value; applyFilter(); });
+    if (ownerSel) ownerSel.addEventListener('change', () => { prodFilter.owner = ownerSel.value; applyFilter(); });
     $('#pAll', table).addEventListener('change', (e) => { tbody.querySelectorAll('tr').forEach((tr) => { if (tr.style.display !== 'none') tr.querySelector('.pchk').checked = e.target.checked; }); });
-    bulkBtn.addEventListener('click', () => {
-      const idxs = Array.from(tbody.querySelectorAll('tr')).filter((tr) => tr.querySelector('.pchk').checked).map((tr) => +tr.dataset.idx).sort((a, b) => b - a);
-      if (!idxs.length) return toast('请先勾选要删除的产品', 'bad');
-      if (!confirm('确认删除选中的 ' + idxs.length + ' 个产品？')) return;
-      idxs.forEach((i) => l.products.splice(i, 1)); markDirty(); renderProducts();
-    });
     pubBtn.addEventListener('click', () => {
-      l.products.push({ id: 'p' + Date.now(), slug: 'p' + Date.now(), name: '新产品', category: '', owner: (me && me.id) || '', createdAt: Date.now(), updatedAt: Date.now(), badge: '', gallery: [], specs: [], benefits: [], delivery: [], highlights: [], related: [], cardTags: [], match: [], price: {}, attrs: {}, trade: {}, customAttrs: [], description: '' });
+      l.products.push({ id: 'p' + Date.now(), slug: 'p' + Date.now(), name: '新产品', category: '', subCategory: '', owner: (me && me.id) || '', createdAt: Date.now(), updatedAt: Date.now(), badge: '', gallery: [], specs: [], benefits: [], delivery: [], highlights: [], related: [], cardTags: [], match: [], price: {}, attrs: {}, trade: {}, customAttrs: [], description: '' });
       editIdx = l.products.length - 1; markDirty(); renderProducts(); window.scrollTo(0, 0);
     });
     applyFilter();
@@ -383,14 +445,24 @@
     const g1 = document.createElement('div'); g1.className = 'grid2';
     g1.appendChild(field('产品名称', p, 'name')); g1.appendChild(field('网址标识 slug', p, 'slug', { placeholder: 'manual' }));
     cb.appendChild(g1);
+    const cats = getCats();
+    const names = cats.map((c) => c.name);
+    if (p.category && names.indexOf(p.category) === -1) names.unshift(p.category);
+    const catOptions = [{ value: '', label: '未分类' }].concat(names.map((n) => ({ value: n, label: n })));
     const g1b = document.createElement('div'); g1b.className = 'grid2';
-    g1b.appendChild(field('产品分类', p, 'category', { placeholder: '如 Manual Box Making Machine' }));
-    if ((usersCache || []).length) {
-      g1b.appendChild(field('负责人', p, 'owner', { select: true, options: [{ value: '', label: '未分配' }].concat((usersCache || []).map((u) => ({ value: u.id, label: u.name + '（' + (ROLE_LABEL[u.role] || u.role) + '）' }))) }));
-    } else {
-      g1b.appendChild(field('负责人', p, 'owner', { placeholder: '业务员姓名' }));
-    }
+    g1b.appendChild(field('产品分类', p, 'category', { select: true, options: catOptions, onInput: () => { p.subCategory = ''; renderProducts(); } }));
+    const cc = cats.find((c) => c.name === p.category);
+    if (cc && (cc.subs || []).length) g1b.appendChild(field('二级分类', p, 'subCategory', { select: true, options: [{ value: '', label: '（无）' }].concat((cc.subs || []).map((s) => ({ value: s, label: s }))) }));
+    else g1b.appendChild(document.createElement('div'));
     cb.appendChild(g1b);
+    const g1c = document.createElement('div'); g1c.className = 'grid2';
+    if (canAll()) {
+      g1c.appendChild(field('负责人', p, 'owner', { select: true, options: [{ value: '', label: '未分配' }].concat((usersCache || []).map((u) => ({ value: u.id, label: u.name + '（' + (ROLE_LABEL[u.role] || u.role) + '）' }))) }));
+    } else {
+      const info = document.createElement('div'); info.className = 'row'; info.innerHTML = '<label class="lbl">负责人</label><div style="color:var(--muted);font-size:0.85rem;padding:0.4rem 0">' + esc((me && me.name) || '我') + '（本人）</div>'; g1c.appendChild(info);
+    }
+    g1c.appendChild(field('设为卖点产品', p, 'featured', { select: true, options: [{ value: 'false', label: '否' }, { value: 'true', label: '是' }], onInput: (v) => { p.featured = v === 'true'; } }));
+    cb.appendChild(g1c);
     const g2 = document.createElement('div'); g2.className = 'grid2';
     g2.appendChild(field('徽章文字', p, 'badge', { placeholder: '入门级' }));
     g2.appendChild(field('徽章样式class', p, 'badgeClass', { placeholder: 'entry/pro/expert/highend/portable/industrial' }));
@@ -1019,7 +1091,15 @@
 
   function showLogin() { $('#loginView').classList.remove('hidden'); $('#appView').classList.add('hidden'); }
   function showApp() { $('#loginView').classList.add('hidden'); $('#appView').classList.remove('hidden'); }
-  function updateAccountsMenu() { const m = $('#menuAccounts'); if (m) m.style.display = isAdmin() ? '' : 'none'; }
+  function allowedSecs() {
+    if (!me || me.role === 'admin') return null; // 全部
+    if (me.role === 'editor') return ['dashboard', 'brand', 'hero', 'wizard', 'products', 'contact', 'chat', 'inbox', 'media', 'tools', 'account'];
+    return ['dashboard', 'products', 'media', 'account']; // 业务员
+  }
+  function updateMenusForRole() {
+    const allow = allowedSecs();
+    $$('.menu-item').forEach((m) => { m.style.display = (!allow || allow.indexOf(m.dataset.sec) > -1) ? '' : 'none'; });
+  }
 
   async function loadContent() {
     const res = await fetch('/api/admin/content'); data = await res.json();
@@ -1029,7 +1109,7 @@
     lang = data.defaultLang || (data.langs[0] && data.langs[0].code) || 'zh';
     leadsCache = null; uploadsCache = null; usersCache = null;
     await loadUsers(true).catch(() => {});
-    updateAccountsMenu();
+    updateMenusForRole();
     renderLangTabs(); switchSection('dashboard'); markClean();
     loadLeads(true).then(updateInboxBadge).catch(() => {});
   }

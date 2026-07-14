@@ -216,15 +216,42 @@ app.delete('/api/users', requireAdmin, (req, res) => {
 // ---------- 内容 API ----------
 // 公开接口：剥离 settings（含 Webhook/SMTP 密码等敏感信息），前台用不到
 app.get('/api/content', (req, res) => {
-  const c = readJson(CONTENT_FILE, {});
-  const pub = Object.assign({}, c);
-  delete pub.settings;
-  res.json(pub);
+  const c = JSON.parse(JSON.stringify(readJson(CONTENT_FILE, {})));
+  delete c.settings;
+  // 前台不展示已软删除的产品
+  Object.values(c.i18n || {}).forEach((L) => { if (Array.isArray(L.products)) L.products = L.products.filter((p) => !p.deleted); });
+  res.json(c);
 });
 
-// 后台接口：返回完整内容（含 settings），需登录
+// 业务员只能看到/编辑自己负责的产品；管理员与制作员看全部
+function isSales(user) { return user && user.role === 'sales'; }
+function filterContentForUser(content, user) {
+  if (!isSales(user)) return content;
+  const c = JSON.parse(JSON.stringify(content || {}));
+  Object.values(c.i18n || {}).forEach((L) => {
+    if (Array.isArray(L.products)) L.products = L.products.filter((p) => p.owner === user.id);
+  });
+  return c;
+}
+function mergeContentFromUser(stored, incoming, user) {
+  if (!isSales(user)) return incoming; // 管理员/制作员：整体保存
+  // 业务员：仅合并本人产品，其他人产品与全局内容保持不变
+  const result = JSON.parse(JSON.stringify(stored || {}));
+  result.i18n = result.i18n || {};
+  Object.keys((incoming && incoming.i18n) || {}).forEach((code) => {
+    const inL = incoming.i18n[code] || {};
+    const stL = result.i18n[code] = result.i18n[code] || {};
+    const others = (stL.products || []).filter((p) => p.owner !== user.id);
+    const otherIds = new Set(others.map((p) => p.id));
+    const mine = (inL.products || []).filter((p) => !otherIds.has(p.id)).map((p) => Object.assign({}, p, { owner: user.id }));
+    stL.products = others.concat(mine);
+  });
+  return result;
+}
+
+// 后台接口：返回完整内容（含 settings），需登录；业务员仅返回自己的产品
 app.get('/api/admin/content', requireAuth, (req, res) => {
-  res.json(readJson(CONTENT_FILE, {}));
+  res.json(filterContentForUser(readJson(CONTENT_FILE, {}), req.user));
 });
 
 app.post('/api/content', requireAuth, (req, res) => {
@@ -232,7 +259,8 @@ app.post('/api/content', requireAuth, (req, res) => {
   if (!body || typeof body !== 'object') {
     return res.status(400).json({ error: '数据格式错误' });
   }
-  writeJson(CONTENT_FILE, body);
+  const merged = mergeContentFromUser(readJson(CONTENT_FILE, {}), body, req.user);
+  writeJson(CONTENT_FILE, merged);
   res.json({ ok: true });
 });
 
@@ -479,7 +507,7 @@ app.get('/sitemap.xml', (req, res) => {
     const L = (content.i18n && content.i18n[l.code]) || {};
     urls.push(base + pathFor(content, l.code, 'home'));
     urls.push(base + pathFor(content, l.code, 'contact'));
-    (L.products || []).forEach((p) => urls.push(base + pathFor(content, l.code, 'product', p.slug || p.id)));
+    (L.products || []).filter((p) => !p.deleted).forEach((p) => urls.push(base + pathFor(content, l.code, 'product', p.slug || p.id)));
   });
   const xml = '<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n' +
     urls.map((u) => '  <url><loc>' + escAttr(u) + '</loc></url>').join('\n') + '\n</urlset>';
