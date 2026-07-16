@@ -200,11 +200,22 @@
       chips.querySelectorAll('.cq').forEach((el) => el.addEventListener('click', () => cqSend(el.dataset.q)));
     }
   }
-  function autoReply(text) {
+  function autoReplyLocal(text) {
     const chat = VG.L.chat || {};
     const t = String(text).toLowerCase();
-    const hit = (chat.replies || []).find((r) => (r.keywords || []).some((k) => t.indexOf(String(k).toLowerCase()) > -1));
+    const hit = (chat.replies || []).find((r) => (r.keywords || []).some((k) => k && t.indexOf(String(k).toLowerCase()) > -1));
     return hit ? hit.text : (chat.fallback || chat.greeting || '');
+  }
+  function fetchReply(text) {
+    const history = chatLog.slice(-8).map(function (m) { return { role: m.role, text: m.text }; });
+    return fetch('/api/chat/reply', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message: text, lang: VG.lang, page: location.pathname, history: history }),
+    }).then(function (r) { return r.json(); }).then(function (j) {
+      if (j && j.text) return String(j.text);
+      return autoReplyLocal(text);
+    }).catch(function () { return autoReplyLocal(text); });
   }
   // 客服开关：点外部关闭必须延后绑定，否则「获取实时报价」等同一次 click 会立刻把窗口关掉
   let outsideCloseHandler = null;
@@ -280,8 +291,13 @@
       if (chatLog.length === 1 && chatLog[0].role === 'agent') withGreeting = chatLog.slice();
     }
     chatLog.push(userMsg);
-    const replyText = autoReply(text);
-    setTimeout(() => {
+    const typing = document.createElement('div');
+    typing.className = 'cm a';
+    typing.dataset.typing = '1';
+    typing.innerHTML = '<div class="cm-av">' + esc(chat.avatar || '客') + '</div><div class="cm-bubble" style="opacity:.7">正在输入…</div>';
+    msgs.appendChild(typing); msgs.scrollTop = msgs.scrollHeight;
+    fetchReply(text).then(function (replyText) {
+      if (typing.parentNode) typing.parentNode.removeChild(typing);
       const a = document.createElement('div');
       a.className = 'cm a';
       a.innerHTML = '<div class="cm-av">' + esc(chat.avatar || '客') + '</div><div class="cm-bubble">' + esc(replyText) + '</div>';
@@ -289,7 +305,7 @@
       const agentMsg = { role: 'agent', text: String(replyText), time: Date.now() };
       chatLog.push(agentMsg);
       reportChat(withGreeting.concat([userMsg, agentMsg]));
-    }, 600 + Math.random() * 500);
+    });
   }
   global.cqSend = cqSend;
 

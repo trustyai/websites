@@ -705,14 +705,20 @@
     const sec = $('#secChat'); sec.innerHTML = '';
     const l = L(); l.chat = l.chat || {};
     const ch = l.chat;
+    const tip = card('回复方式说明');
+    tip.innerHTML = '<div class="hint" style="margin:0">① <b>固定话术（推荐先配）</b>：下方「自动回复规则」按关键词匹配，命中即回对应内容。<br>' +
+      '② <b>AI 智能回复（可选）</b>：在「翻译与备份」里开启 AI 并填写 API Key；未命中关键词时，会调用大模型按客户问题生成回答，失败则用兜底回复。<br>' +
+      '③ 若一直回同一句，多半是还没加规则，系统只用了欢迎语/兜底——请先添加规则并点「保存全部修改」。各语言需分别配置。</div>';
+    sec.appendChild(tip);
     const c1 = card('【' + lang + '】客服信息');
     const g = document.createElement('div'); g.className = 'grid2'; g.appendChild(field('客服名称', ch, 'agentName')); g.appendChild(field('头像文字', ch, 'avatar'));
     c1.appendChild(g);
     c1.appendChild(field('状态文字', ch, 'status'));
     c1.appendChild(field('欢迎语', ch, 'greeting', { textarea: true, rows: 2 }));
-    c1.appendChild(field('兜底回复（无匹配时）', ch, 'fallback', { textarea: true, rows: 2 }));
+    c1.appendChild(field('兜底回复（无匹配关键词、且未开 AI 时）', ch, 'fallback', { textarea: true, rows: 2, placeholder: '请留下您的邮箱/微信，或点击导航「联系我们」提交询盘，我们尽快报价。' }));
     sec.appendChild(c1);
     const c2 = card('快捷问题'); ch.quickChips = ch.quickChips || [];
+    hint(c2, '访客一点即发送；请尽量让文案能命中下方关键词（如含「价格」「气动」）');
     ch.quickChips.forEach((q, i) => {
       const it = document.createElement('div'); it.className = 'list-item'; it.style.cssText = 'display:flex;gap:0.5rem;align-items:center';
       const f = field('', { v: q }, 'v', { onInput: (val) => { ch.quickChips[i] = val; } }); f.style.cssText = 'flex:1;margin:0'; it.appendChild(f);
@@ -722,9 +728,29 @@
     addChip.addEventListener('click', () => { ch.quickChips.push('新问题'); markDirty(); renderChat(); }); c2.appendChild(addChip);
     sec.appendChild(c2);
 
-    const c3 = card('自动回复规则'); hint(c3, '用户消息包含任一关键词即回复对应内容；都不匹配用兜底回复'); ch.replies = ch.replies || [];
+    const c3 = card('自动回复规则（固定话术）');
+    hint(c3, '用户消息包含任一关键词 → 回复对应内容。规则按从上到下优先匹配。');
+    ch.replies = ch.replies || [];
+    const seed = document.createElement('button'); seed.type = 'button'; seed.className = 'btn ghost'; seed.textContent = '一键填入中文示例规则';
+    seed.style.marginBottom = '0.6rem';
+    seed.addEventListener('click', () => {
+      if (ch.replies.length && !confirm('将追加示例规则到当前列表，是否继续？')) return;
+      const samples = [
+        { keywords: ['价格', '报价', '多少钱', 'price', '多少'], text: '各型号参考价可在产品详情页查看（如气动机约 ¥28,000 起）。具体配置价格需按材料/产量评估，您方便留个邮箱或微信吗？我们发正式报价单。' },
+        { keywords: ['气动', 'pneumatic'], text: '气动 V 槽成型机适合中小型企业日常生产，气动驱动稳定，带 6 档深度预设。详情：/products/pneumatic ，也可直接说下您的材料厚度和日产量，我帮您判断是否合适。' },
+        { keywords: ['手动', '打样', 'manual'], text: '手动 V 槽打样机轻便灵活，适合设计工作室和小批量多款式。参考价约 ¥8,800 起。详情：/products/manual' },
+        { keywords: ['CNC', '数控', '自动线', '大批量'], text: '大批量/高精度建议看 CNC 数控中心或全自动生产线。方便告诉我日产量和材料吗？我给您选型建议。' },
+        { keywords: ['选型', '推荐', '哪个好', '怎么选'], text: '选型一般看三点：材料厚度、日产量、是否要自动化。薄材小批量→手动；中等批量→气动；大批量高精度→CNC/自动线。您目前加工什么材料、一天大概多少件？' },
+        { keywords: ['质保', '售后', '保修', '安装'], text: '设备支持质保与售后响应，部分机型含安装调试。留下联系方式后，业务同事会按您所在地区说明联保与上门政策。' },
+        { keywords: ['联系', '电话', '微信', '邮箱'], text: '您可以直接在网站「联系我们」提交询盘，或在此留下邮箱/微信/电话，我们会尽快人工跟进。' },
+      ];
+      ch.replies = (ch.replies || []).concat(samples);
+      if (!ch.fallback) ch.fallback = '感谢咨询！请简单描述材料、厚度和产量，或留下邮箱/微信，我们安排业务员给您详细方案与报价。';
+      markDirty(); renderChat(); toast('已填入示例，请检查后保存', 'ok');
+    });
+    c3.appendChild(seed);
     renderList(c3, ch.replies, { label: (x, i) => '规则 ' + (i + 1), rerender: renderChat, addLabel: '+ 回复规则', makeDefault: () => ({ keywords: [], text: '' }), fields: (x, host) => {
-      host.appendChild(csvField('关键词（逗号）', x, 'keywords')); host.appendChild(field('回复内容', x, 'text', { textarea: true, rows: 2 }));
+      host.appendChild(csvField('关键词（逗号）', x, 'keywords', { placeholder: '价格,报价,多少钱' })); host.appendChild(field('回复内容', x, 'text', { textarea: true, rows: 3 }));
     } }); sec.appendChild(c3);
   }
 
@@ -871,6 +897,35 @@
     cs.appendChild(field('通知 Webhook（可留空）', data.settings, 'notifyWebhook', { placeholder: 'https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=...' }));
     cs.appendChild(field('统计代码（插入 <head>，如 Google Analytics / 百度统计）', data.settings, 'headHtml', { textarea: true, rows: 3, placeholder: '<script async src="https://www.googletagmanager.com/gtag/js?id=G-XXXX"></script> ...' }));
     sec.appendChild(cs);
+
+    // AI 客服（可选）
+    data.settings.aiChat = data.settings.aiChat || {};
+    const ai = data.settings.aiChat;
+    const cai = card('前台客服 AI 智能回复（可选）');
+    hint(cai, '关闭时只用「在线客服」里的关键词固定话术。开启后：先匹配关键词，未命中再调用大模型（OpenAI 兼容接口，如官方 / 代理 / DeepSeek 等）。密钥仅保存在服务器，不会下发到前台。');
+    cai.appendChild(field('启用 AI', ai, 'enabled', { select: true, options: [{ value: 'false', label: '关闭（仅固定话术）' }, { value: 'true', label: '开启' }], onInput: (v) => { ai.enabled = v === 'true'; } }));
+    const aig = document.createElement('div'); aig.className = 'grid2';
+    aig.appendChild(field('API 地址', ai, 'apiUrl', { placeholder: 'https://api.openai.com/v1' }));
+    aig.appendChild(field('模型', ai, 'model', { placeholder: 'gpt-4o-mini' }));
+    cai.appendChild(aig);
+    cai.appendChild(field('API Key', ai, 'apiKey', { type: 'password', placeholder: 'sk-...' }));
+    cai.appendChild(field('系统提示词（可留空用默认）', ai, 'systemPrompt', { textarea: true, rows: 3, placeholder: '你是 V槽PRO 售前客服…' }));
+    const aiTest = document.createElement('button'); aiTest.type = 'button'; aiTest.className = 'btn ghost'; aiTest.textContent = '测试 AI 连通';
+    aiTest.style.marginTop = '0.5rem';
+    aiTest.addEventListener('click', async () => {
+      await save();
+      aiTest.disabled = true; aiTest.textContent = '测试中…';
+      try {
+        const r = await fetch('/api/chat/reply', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ message: '你们气动机器大概什么价格？', lang: 'zh', history: [] }) });
+        const j = await r.json();
+        if (!r.ok) throw new Error(j.error || '失败');
+        toast('回复来源: ' + (j.source || '?') + ' — ' + String(j.text || '').slice(0, 80), j.aiError ? 'bad' : 'ok');
+        if (j.aiError) alert('AI 回落原因：' + j.aiError);
+      } catch (e) { toast(e.message || '测试失败', 'bad'); }
+      aiTest.disabled = false; aiTest.textContent = '测试 AI 连通';
+    });
+    cai.appendChild(aiTest);
+    sec.appendChild(cai);
 
     // 邮件通知（SMTP）
     data.settings.smtp = data.settings.smtp || {};

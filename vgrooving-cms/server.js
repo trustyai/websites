@@ -649,6 +649,91 @@ app.delete('/api/chats', requireAuth, (req, res) => {
   res.json({ ok: true });
 });
 
+// ---------- 客服回复：关键词话术 + 可选大模型 AI ----------
+function aiChatSettings() {
+  const s = ((readJson(CONTENT_FILE, {}).settings) || {}).aiChat || {};
+  return {
+    enabled: !!s.enabled,
+    apiUrl: String(s.apiUrl || 'https://api.openai.com/v1').replace(/\/$/, ''),
+    apiKey: String(s.apiKey || ''),
+    model: String(s.model || 'gpt-4o-mini'),
+    systemPrompt: String(s.systemPrompt || ''),
+  };
+}
+function keywordReply(lang, message) {
+  const content = readJson(CONTENT_FILE, {});
+  const L = (content.i18n && content.i18n[lang]) || (content.i18n && content.i18n[content.defaultLang || 'zh']) || {};
+  const chat = L.chat || {};
+  const t = String(message || '').toLowerCase();
+  const hit = (chat.replies || []).find((r) => (r.keywords || []).some((k) => k && t.indexOf(String(k).toLowerCase()) > -1));
+  if (hit && hit.text) return { text: String(hit.text), source: 'keyword' };
+  const fb = chat.fallback || chat.greeting || '';
+  return { text: String(fb), source: 'fallback' };
+}
+function productBrief(lang) {
+  const content = readJson(CONTENT_FILE, {});
+  const L = (content.i18n && content.i18n[lang]) || {};
+  const brand = L.brandName || 'V槽PRO';
+  const products = (L.products || []).filter((p) => !p.deleted).slice(0, 12).map((p) => {
+    const price = (p.price && (p.price.main || p.price.usd)) || '';
+    return `- ${p.name}${price ? '（参考价 ' + price + '）' : ''}：${p.subtitle || p.cardDesc || ''}`;
+  }).join('\n');
+  return { brand, products };
+}
+async function callAiChat(ai, lang, message, history) {
+  const brief = productBrief(lang);
+  const sys = (ai.systemPrompt && ai.systemPrompt.trim()) || (
+    `你是 ${brief.brand} 官网的售前客服，用简洁、专业、友好的中文（若用户用其它语言则跟用户语言）回答。\n` +
+    `只围绕 V 槽开槽设备的选型、价格区间、交期、售后作答；不确定的价格请引导用户留联系方式或提交询盘，不要编造精确库存。\n` +
+    `产品概览：\n${brief.products || '（暂无产品列表）'}`
+  );
+  const messages = [{ role: 'system', content: sys }];
+  (Array.isArray(history) ? history : []).slice(-8).forEach((m) => {
+    if (!m || !m.text) return;
+    messages.push({ role: m.role === 'agent' ? 'assistant' : 'user', content: String(m.text).slice(0, 1000) });
+  });
+  messages.push({ role: 'user', content: String(message).slice(0, 2000) });
+  const url = ai.apiUrl + '/chat/completions';
+  const resp = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + ai.apiKey },
+    body: JSON.stringify({ model: ai.model, temperature: 0.6, max_tokens: 500, messages }),
+  });
+  const data = await resp.json().catch(() => ({}));
+  if (!resp.ok) {
+    const err = (data && data.error && (data.error.message || data.error)) || ('AI HTTP ' + resp.status);
+    throw new Error(typeof err === 'string' ? err : JSON.stringify(err));
+  }
+  const text = (((data.choices || [])[0] || {}).message || {}).content;
+  if (!text) throw new Error('AI 无返回内容');
+  return String(text).trim().slice(0, 4000);
+}
+app.get('/api/chat/config', (req, res) => {
+  const ai = aiChatSettings();
+  res.json({ aiEnabled: !!(ai.enabled && ai.apiKey), mode: (ai.enabled && ai.apiKey) ? 'ai' : 'keyword' });
+});
+app.post('/api/chat/reply', async (req, res) => {
+  const b = req.body || {};
+  const ip = (req.ip || '').replace(/^::ffff:/, '');
+  if (!chatRateOk(ip)) return res.status(429).json({ error: '过于频繁' });
+  const message = String(b.message || '').trim().slice(0, 2000);
+  if (!message) return res.status(400).json({ error: '请输入消息' });
+  const lang = String(b.lang || 'zh').slice(0, 8);
+  const ai = aiChatSettings();
+  // 先关键词（有命中则直接用，省钱且可控）；无命中且开启 AI 再走大模型
+  const kw = keywordReply(lang, message);
+  if (kw.source === 'keyword') return res.json({ ok: true, text: kw.text, source: 'keyword' });
+  if (ai.enabled && ai.apiKey) {
+    try {
+      const text = await callAiChat(ai, lang, message, b.history);
+      return res.json({ ok: true, text, source: 'ai' });
+    } catch (e) {
+      return res.json({ ok: true, text: kw.text, source: 'fallback', aiError: (e && e.message) || 'AI 失败' });
+    }
+  }
+  res.json({ ok: true, text: kw.text, source: kw.source });
+});
+
 // ---------- 访问统计 ----------
 let stats = readJson(STATS_FILE, null) || { total: 0, days: {}, paths: {}, langs: {} };
 let statsDirty = false;
@@ -787,7 +872,7 @@ app.get(/^\/(?!api\/).*/, (req, res) => res.redirect('/'));
 ['SIGINT', 'SIGTERM'].forEach((sig) => process.on(sig, () => { flushStats(); process.exit(0); }));
 
 // 部署校验：curl /api/build 应看到本文件里的 buildId
-const BUILD_ID = '20260716c-cta-fix';
+const BUILD_ID = '20260716d-ai-chat';
 app.get('/api/build', (req, res) => {
   res.json({
     ok: true,
