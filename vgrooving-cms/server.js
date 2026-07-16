@@ -733,13 +733,15 @@ function readShell(file) {
   shellCache[file] = { mtime, html };
   return html;
 }
+// 内联 CTA 保险脚本：即使浏览器缓存了旧 common.js，产品页按钮也能打开客服/下载参数
+const CTA_GUARD = `<script>(function(){function O(){var w=document.getElementById('chatWindow'),f=document.getElementById('chatFab');if(!w||!f)return;w.classList.add('open');f.textContent='🛑';f.style.background='#E60012';}document.addEventListener('click',function(e){var t=e.target&&e.target.closest&&e.target.closest('.cta-primary,.nav-btn,[data-open-chat],a[onclick*="openChat"],button[onclick*="openChat"]');if(!t)return;e.preventDefault();e.stopImmediatePropagation();O();},true);document.addEventListener('click',function(e){var t=e.target&&e.target.closest&&e.target.closest('.cta-secondary');if(!t)return;e.preventDefault();e.stopImmediatePropagation();var title=(document.querySelector('.product-title')||{}).textContent||'product';var rows=[].map.call(document.querySelectorAll('.spec-table tr'),function(tr){var td=tr.querySelectorAll('td');return td.length>=2?(td[0].textContent+': '+td[1].textContent):'';}).filter(Boolean);var a=document.createElement('a');a.href=URL.createObjectURL(new Blob(['\\ufeff'+title+'\\n\\n'+rows.join('\\n')+'\\n\\n'+location.href],{type:'text/plain;charset=utf-8'}));a.download='specs.txt';document.body.appendChild(a);a.click();a.remove();},true);})();</script>`;
 function renderShell(file, req, res, type, slug) {
   const content = readJson(CONTENT_FILE, {});
   const seo = buildSeo(req, type, req.params.lang, slug);
   const headHtml = (content.settings && content.settings.headHtml) || '';
   let html = readShell(file);
   html = html.replace(/<html[^>]*>/, '<html lang="' + seo.lang + '" dir="' + seo.dir + '">');
-  html = html.replace(/<title>[\s\S]*?<\/title>/, seo.tags + (headHtml ? '\n' + headHtml + '\n' : ''));
+  html = html.replace(/<title>[\s\S]*?<\/title>/, seo.tags + (headHtml ? '\n' + headHtml + '\n' : '') + '\n' + CTA_GUARD + '\n');
   recordView(type, slug || '', req.params.lang || (content.defaultLang || 'zh'));
   res.set('Content-Type', 'text/html; charset=utf-8').send(html);
 }
@@ -784,10 +786,23 @@ app.get(/^\/(?!api\/).*/, (req, res) => res.redirect('/'));
 
 ['SIGINT', 'SIGTERM'].forEach((sig) => process.on(sig, () => { flushStats(); process.exit(0); }));
 
+// 部署校验：curl /api/build 应看到本文件里的 buildId
+const BUILD_ID = '20260716c-cta-fix';
+app.get('/api/build', (req, res) => {
+  res.json({
+    ok: true,
+    buildId: BUILD_ID,
+    hasChatFix: true,
+    time: Date.now(),
+    cwd: process.cwd(),
+  });
+});
+
 app.listen(PORT, () => {
   console.log('====================================');
   console.log(`  前台：  http://localhost:${PORT}`);
   console.log(`  后台：  http://localhost:${PORT}/admin`);
+  console.log(`  构建：  ${BUILD_ID}`);
   console.log(`  默认账号： ${DEFAULT_USER}   密码： ${DEFAULT_PASS}`);
   console.log('====================================');
 });
