@@ -1,39 +1,38 @@
 #!/bin/bash
-# 宝塔一键更新 V槽 CMS（请在服务器上执行）
-# 用法：bash baota-update.sh
-# 或：curl -fsSL https://raw.githubusercontent.com/trustyai/websites/cursor/multilang-cms-rebuild-78df/vgrooving-cms/scripts/baota-update.sh | bash
+# 宝塔一键更新 V槽 CMS（不要求 /www/vgrooving-cms 本身是 git 仓库）
+# 用法（在宝塔终端整段粘贴）：
+#   curl -fsSL https://raw.githubusercontent.com/trustyai/websites/cursor/multilang-cms-rebuild-78df/vgrooving-cms/scripts/baota-update.sh | bash
 set -euo pipefail
 
 BRANCH="cursor/multilang-cms-rebuild-78df"
 REPO="https://github.com/trustyai/websites.git"
 APP_DIR="${APP_DIR:-/www/vgrooving-cms}"
-BUILD_MARK="bindOutsideClose"
+BUILD_ID="20260716e-opportunity"
+PM2_NAME="${PM2_NAME:-vgrooving-cms}"
 
 echo "==> 目标目录: $APP_DIR"
 echo "==> 分支: $BRANCH"
+echo "==> 期望 buildId: $BUILD_ID"
 
-# 若当前目录就是含 server.js 的 CMS，优先用当前目录
-if [ -f "./server.js" ] && [ -f "./package.json" ]; then
-  APP_DIR="$(pwd)"
-  echo "==> 检测到当前目录即为 CMS，改用: $APP_DIR"
-fi
+command -v git >/dev/null || { echo "ERROR: 未安装 git"; exit 1; }
+command -v rsync >/dev/null || { echo "ERROR: 未安装 rsync，请先: yum install -y rsync 或 apt install -y rsync"; exit 1; }
 
-mkdir -p "$(dirname "$APP_DIR")"
 BACKUP="/tmp/vg-backup-$(date +%Y%m%d%H%M%S)"
 mkdir -p "$BACKUP"
-
 if [ -d "$APP_DIR/data" ]; then
-  echo "==> 备份 data / uploads -> $BACKUP"
+  echo "==> 备份 data -> $BACKUP/data"
   cp -a "$APP_DIR/data" "$BACKUP/" 2>/dev/null || true
-  cp -a "$APP_DIR/public/uploads" "$BACKUP/" 2>/dev/null || true
+fi
+if [ -d "$APP_DIR/public/uploads" ]; then
+  echo "==> 备份 uploads -> $BACKUP/uploads"
+  cp -a "$APP_DIR/public/uploads" "$BACKUP/uploads" 2>/dev/null || true
 fi
 
 TMP="/tmp/vg-src-$$"
 rm -rf "$TMP"
-echo "==> 克隆最新代码..."
+echo "==> 从 GitHub 拉取最新代码（临时目录）..."
 git clone --depth 1 -b "$BRANCH" "$REPO" "$TMP"
 
-# 仓库结构是 websites/vgrooving-cms/
 SRC="$TMP/vgrooving-cms"
 if [ ! -f "$SRC/server.js" ]; then
   echo "ERROR: 克隆结果里找不到 vgrooving-cms/server.js" >&2
@@ -41,14 +40,14 @@ if [ ! -f "$SRC/server.js" ]; then
 fi
 
 mkdir -p "$APP_DIR"
-# 同步代码（不删 data/uploads）
+echo "==> 同步代码到 $APP_DIR （保留 data/ 与 public/uploads/）..."
 rsync -a --delete \
   --exclude 'data/' \
   --exclude 'public/uploads/' \
   --exclude 'node_modules/' \
   "$SRC/" "$APP_DIR/"
 
-# 恢复数据
+# 恢复运行时数据
 if [ -d "$BACKUP/data" ]; then
   mkdir -p "$APP_DIR/data"
   cp -a "$BACKUP/data/." "$APP_DIR/data/" 2>/dev/null || true
@@ -62,48 +61,36 @@ cd "$APP_DIR"
 echo "==> npm install..."
 npm install --omit=dev
 
-# 重启 pm2
+# 用绝对路径重启，避免 pm2 指到旧目录
 if command -v pm2 >/dev/null 2>&1; then
-  if pm2 describe vgrooving-cms >/dev/null 2>&1; then
-    pm2 restart vgrooving-cms --update-env
-  else
-    pm2 start server.js --name vgrooving-cms
+  echo "==> 重启 pm2: $PM2_NAME (cwd=$APP_DIR)"
+  if pm2 describe "$PM2_NAME" >/dev/null 2>&1; then
+    pm2 delete "$PM2_NAME" >/dev/null 2>&1 || true
   fi
+  pm2 start "$APP_DIR/server.js" --name "$PM2_NAME" --cwd "$APP_DIR"
   pm2 save || true
 else
-  echo "WARN: 未找到 pm2，请手动重启 Node 进程"
+  echo "WARN: 未找到 pm2，请手动重启 Node"
 fi
 
-echo "==> 本地文件校验..."
-if grep -q "$BUILD_MARK" "$APP_DIR/public/common.js"; then
-  echo "OK: common.js 含 $BUILD_MARK"
-else
-  echo "FAIL: common.js 仍是旧版！" >&2
-  exit 1
-fi
-if grep -q '20260716c' "$APP_DIR/public/product.html"; then
-  echo "OK: product.html 含缓存戳"
-else
-  echo "WARN: product.html 缓存戳未找到"
-fi
-
-echo "==> 通过本机 HTTP 校验（若端口不是 3000 请改）..."
 sleep 1
-CODE="$(curl -s "http://127.0.0.1:3000/common.js?v=20260716c" | grep -c "$BUILD_MARK" || true)"
-if [ "${CODE:-0}" -gt 0 ]; then
-  echo "OK: http://127.0.0.1:3000 已返回新 JS"
-else
-  echo "FAIL: 本机 3000 端口仍返回旧 JS。请检查 pm2 是否指向 $APP_DIR" >&2
-  echo "pm2 信息：" >&2
-  pm2 show vgrooving-cms 2>/dev/null | head -40 || true
+echo "==> 校验 /api/build ..."
+RESP="$(curl -s "http://127.0.0.1:3000/api/build" || true)"
+echo "$RESP"
+echo "$RESP" | grep -q "$BUILD_ID" || {
+  echo ""
+  echo "FAIL: buildId 不是 $BUILD_ID，当前进程可能仍指向旧文件。"
+  echo "请执行: pm2 show $PM2_NAME | head -40"
+  echo "确认 exec cwd / script path 都是 $APP_DIR"
   exit 1
-fi
+}
 
 echo ""
 echo "========================================"
-echo " 更新成功。请浏览器强制刷新后测试："
-echo " https://vgrooving.com/products/pneumatic"
-echo " 验证：打开源码应看到 common.js?v=20260716c"
-echo " 备份在: $BACKUP"
+echo " 更新成功！"
+echo " buildId = $BUILD_ID"
+echo " 后台菜单应出现「商机中心」（不再是「收件箱」）"
+echo " 请浏览器强制刷新 (Ctrl+F5) 后测试"
+echo " 备份目录: $BACKUP"
 echo "========================================"
 rm -rf "$TMP"
