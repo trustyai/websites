@@ -417,6 +417,44 @@ function userNameById(id) {
   const u = readUsers().find((x) => x.id === id);
   return u ? (u.name || u.username) : '';
 }
+const LEAD_SOURCES = { form: '表单询盘', chat: '智能询盘', product: '产品询盘' };
+const LANG_REGION = { zh: '中国/中文', en: 'English', es: 'Español', ko: '한국어', ar: 'العربية', tr: 'Türkçe' };
+
+function resolveProductMeta(page, lang, hint) {
+  const content = readJson(CONTENT_FILE, {});
+  let slug = String((hint && hint.productSlug) || '');
+  if (!slug) {
+    const m = String(page || '').match(/\/products\/([^/?#]+)/);
+    if (m) slug = decodeURIComponent(m[1]).replace(/\.html?$/i, '');
+  }
+  if (!slug) {
+    return {
+      owner: '', product: String((hint && hint.productName) || ''), productSlug: '',
+      productImage: String((hint && hint.productImage) || ''), productPrice: String((hint && hint.productPrice) || ''),
+    };
+  }
+  const codes = [lang, content.defaultLang || 'zh'].concat(Object.keys(content.i18n || {}));
+  for (const code of codes) {
+    const p = (((content.i18n || {})[code] || {}).products || []).find((x) => (x.slug || x.id) === slug);
+    if (p) {
+      let img = '';
+      if (p.cardImage) img = p.cardImage;
+      else if (p.gallery && p.gallery[0] && p.gallery[0].src) img = p.gallery[0].src;
+      return {
+        owner: p.owner || '',
+        product: p.name || slug,
+        productSlug: slug,
+        productImage: img,
+        productPrice: (p.price && (p.price.main || p.price.usd)) || '',
+      };
+    }
+  }
+  return {
+    owner: '', product: String((hint && hint.productName) || slug), productSlug: slug,
+    productImage: String((hint && hint.productImage) || ''), productPrice: String((hint && hint.productPrice) || ''),
+  };
+}
+
 app.post('/api/leads', (req, res) => {
   const b = req.body || {};
   if (b.website) return res.json({ ok: true }); // 蜜罐：机器人填了隐藏字段，静默丢弃
@@ -424,30 +462,30 @@ app.post('/api/leads', (req, res) => {
   if (!rateOk(ip)) return res.status(429).json({ error: '提交过于频繁，请稍后再试' });
   const name = String(b.name || '').slice(0, 100).trim();
   const message = String(b.message || '').slice(0, 3000).trim();
-  if (!name && !b.email) return res.status(400).json({ error: '请至少填写姓名或邮箱' });
-  // 若来自产品详情页，自动归属到该产品的负责人
-  let owner = '', product = '';
-  const m = String(b.page || '').match(/\/products\/([^/?#]+)/);
-  if (m) {
-    const slug = decodeURIComponent(m[1]).replace(/\.html?$/i, '');
-    const content = readJson(CONTENT_FILE, {});
-    for (const code of Object.keys(content.i18n || {})) {
-      const p = (content.i18n[code].products || []).find((x) => (x.slug || x.id) === slug);
-      if (p) { owner = p.owner || ''; product = p.name || slug; break; }
-    }
-  }
+  if (!name && !b.email && !b.phone) return res.status(400).json({ error: '请至少填写姓名、邮箱或电话' });
+  const lang = String(b.lang || '').slice(0, 8);
+  const page = String(b.page || '').slice(0, 300);
+  const meta = resolveProductMeta(page, lang, b);
+  const source = ['form', 'chat', 'product'].indexOf(b.source) > -1 ? b.source : (meta.productSlug ? 'product' : 'form');
   const lead = {
     id: crypto.randomBytes(8).toString('hex'),
+    source,
+    title: String(b.title || (meta.product ? ('询盘：' + meta.product) : '网站询盘')).slice(0, 200),
     name, email: String(b.email || '').slice(0, 160).trim(),
+    phone: String(b.phone || '').slice(0, 40).trim(),
     company: String(b.company || '').slice(0, 160).trim(),
-    message, lang: String(b.lang || '').slice(0, 8), page: String(b.page || '').slice(0, 300),
-    owner, product, time: Date.now(), read: false, ip,
+    country: String(b.country || LANG_REGION[lang] || lang || '').slice(0, 80),
+    message, lang, page,
+    owner: meta.owner, product: meta.product, productSlug: meta.productSlug,
+    productImage: meta.productImage, productPrice: meta.productPrice,
+    chatId: '', sessionId: '',
+    time: Date.now(), read: false, ip,
     status: 'new', replies: [], note: '', lastReplyAt: 0, updatedAt: Date.now(),
   };
   const leads = readLeads(); leads.unshift(lead); writeJson(LEADS_FILE, leads);
   notifyWebhook(lead);
   sendLeadEmail(lead);
-  res.json({ ok: true });
+  res.json({ ok: true, id: lead.id });
 });
 // 询盘可见性：管理员全部；业务员仅自己负责；制作员无（只发布产品）
 function leadsForUser(user) {
@@ -469,10 +507,22 @@ function normalizeLead(l) {
   if (l.note == null) l.note = '';
   if (!l.lastReplyAt) l.lastReplyAt = 0;
   if (!l.updatedAt) l.updatedAt = l.time || Date.now();
+  if (!l.source) l.source = l.sessionId || l.chatId ? 'chat' : (l.productSlug || (l.page || '').indexOf('/products/') > -1 ? 'product' : 'form');
+  if (!l.title) {
+    if (l.source === 'chat') l.title = l.product ? ('Chat about ' + l.product) : '在线客服咨询';
+    else l.title = l.product ? ('询盘：' + l.product) : ((l.message || '').slice(0, 40) || '网站询盘');
+  }
+  if (l.phone == null) l.phone = '';
+  if (l.country == null) l.country = LANG_REGION[l.lang] || l.lang || '';
+  if (l.productImage == null) l.productImage = '';
+  if (l.productPrice == null) l.productPrice = '';
+  if (l.chatId == null) l.chatId = '';
+  if (l.sessionId == null) l.sessionId = '';
+  l.sourceLabel = LEAD_SOURCES[l.source] || l.source;
   return l;
 }
 app.get('/api/leads', requireAuth, (req, res) => {
-  res.json({ leads: leadsForUser(req.user).map(normalizeLead), statuses: LEAD_STATUS_LABEL });
+  res.json({ leads: leadsForUser(req.user).map(normalizeLead), statuses: LEAD_STATUS_LABEL, sources: LEAD_SOURCES });
 });
 app.post('/api/leads/read', requireAuth, (req, res) => {
   const leads = readLeads();
@@ -572,6 +622,19 @@ app.get('/api/leads/stats', requireAuth, (req, res) => {
   res.json({ byOwner, totals, statuses: LEAD_STATUS_LABEL });
 });
 
+/** 单条商机详情（含关联 AI 聊天记录）——须放在 /stats 之后，避免 :id 吃掉 stats */
+app.get('/api/leads/:id', requireAuth, (req, res) => {
+  const leads = readLeads();
+  const it = leads.find((l) => l.id === req.params.id);
+  if (!it || !canTouchLead(req.user, it)) return res.status(404).json({ error: '不存在或无权限' });
+  const lead = normalizeLead(Object.assign({}, it));
+  let chat = null;
+  if (lead.chatId || lead.sessionId) {
+    chat = readChats().find((c) => c.id === lead.chatId || c.sessionId === lead.sessionId) || null;
+  }
+  res.json({ lead, chat });
+});
+
 // ---------- 前台 AI 客服聊天记录 ----------
 function readChats() { return readJson(CHATS_FILE, []); }
 function writeChats(list) { writeJson(CHATS_FILE, list); }
@@ -581,6 +644,60 @@ function chatRateOk(ip) {
   const arr = (chatRate.get(ip) || []).filter((t) => now - t < 60000);
   if (arr.length >= 40) return false;
   arr.push(now); chatRate.set(ip, arr); return true;
+}
+/** 聊天会话自动同步为「智能询盘」商机 */
+function upsertLeadFromChat(chat, extra) {
+  const userMsgs = (chat.messages || []).filter((m) => m.role === 'user');
+  if (!userMsgs.length) return null;
+  const leads = readLeads();
+  let lead = leads.find((l) => l.sessionId === chat.sessionId || (chat.id && l.chatId === chat.id));
+  const meta = resolveProductMeta(chat.page, chat.lang, extra || {});
+  const preview = userMsgs.slice(-3).map((m) => m.text).join(' / ').slice(0, 500);
+  const now = Date.now();
+  if (!lead) {
+    lead = {
+      id: crypto.randomBytes(8).toString('hex'),
+      source: 'chat',
+      title: meta.product ? ('Chat about ' + meta.product) : '在线客服咨询',
+      name: String((extra && extra.name) || '').slice(0, 100),
+      email: String((extra && extra.email) || '').slice(0, 160),
+      phone: String((extra && extra.phone) || '').slice(0, 40),
+      company: String((extra && extra.company) || '').slice(0, 160),
+      country: String((extra && extra.country) || LANG_REGION[chat.lang] || chat.lang || '').slice(0, 80),
+      message: preview,
+      lang: chat.lang || '', page: chat.page || '',
+      owner: meta.owner, product: meta.product, productSlug: meta.productSlug,
+      productImage: meta.productImage, productPrice: meta.productPrice,
+      chatId: chat.id, sessionId: chat.sessionId,
+      time: chat.createdAt || now, read: false, ip: chat.ip || '',
+      status: 'new', replies: [], note: '', lastReplyAt: 0, updatedAt: now,
+      messageCount: (chat.messages || []).length,
+    };
+    leads.unshift(lead);
+  } else {
+    lead.chatId = chat.id;
+    lead.sessionId = chat.sessionId;
+    lead.message = preview;
+    lead.updatedAt = now;
+    lead.messageCount = (chat.messages || []).length;
+    if (meta.product) { lead.product = meta.product; lead.title = 'Chat about ' + meta.product; }
+    if (meta.productImage) lead.productImage = meta.productImage;
+    if (meta.productPrice) lead.productPrice = meta.productPrice;
+    if (meta.owner && !lead.owner) lead.owner = meta.owner;
+    if (meta.productSlug) lead.productSlug = meta.productSlug;
+    if (chat.page) lead.page = chat.page;
+    if (extra) {
+      if (extra.name) lead.name = String(extra.name).slice(0, 100);
+      if (extra.email) lead.email = String(extra.email).slice(0, 160);
+      if (extra.phone) lead.phone = String(extra.phone).slice(0, 40);
+      if (extra.company) lead.company = String(extra.company).slice(0, 160);
+      if (extra.country) lead.country = String(extra.country).slice(0, 80);
+    }
+    // 有新用户消息时重新标未读，便于业务员跟进
+    if (userMsgs.length) lead.read = false;
+  }
+  writeJson(LEADS_FILE, leads);
+  return lead;
 }
 /** 前台上报：创建或追加会话消息（按 sessionId 合并） */
 app.post('/api/chats', (req, res) => {
@@ -604,6 +721,11 @@ app.post('/api/chats', (req, res) => {
       id: crypto.randomBytes(8).toString('hex'),
       sessionId, lang: String(b.lang || '').slice(0, 8),
       page: String(b.page || '').slice(0, 300),
+      productSlug: String(b.productSlug || '').slice(0, 80),
+      productName: String(b.productName || '').slice(0, 160),
+      productImage: String(b.productImage || '').slice(0, 300),
+      productPrice: String(b.productPrice || '').slice(0, 80),
+      visitor: {},
       messages: [], createdAt: now, updatedAt: now, ip,
       ua: String((req.headers['user-agent'] || '')).slice(0, 240),
     };
@@ -611,6 +733,10 @@ app.post('/api/chats', (req, res) => {
   }
   if (b.lang) chat.lang = String(b.lang).slice(0, 8);
   if (b.page) chat.page = String(b.page).slice(0, 300);
+  if (b.productSlug) chat.productSlug = String(b.productSlug).slice(0, 80);
+  if (b.productName) chat.productName = String(b.productName).slice(0, 160);
+  if (b.productImage) chat.productImage = String(b.productImage).slice(0, 300);
+  if (b.productPrice) chat.productPrice = String(b.productPrice).slice(0, 80);
   // append=true 时只追加新消息；否则用完整列表覆盖（前端一般增量追加）
   if (b.append) chat.messages = (chat.messages || []).concat(msgs);
   else if (msgs.length) chat.messages = msgs;
@@ -619,7 +745,30 @@ app.post('/api/chats', (req, res) => {
   // 最多保留 500 个会话
   while (chats.length > 500) chats.pop();
   writeChats(chats);
-  res.json({ ok: true, id: chat.id });
+  const lead = upsertLeadFromChat(chat, Object.assign({}, chat.visitor || {}, {
+    productSlug: chat.productSlug, productName: chat.productName,
+    productImage: chat.productImage, productPrice: chat.productPrice,
+  }));
+  res.json({ ok: true, id: chat.id, leadId: lead && lead.id });
+});
+/** 访客在聊天中留下联系方式 → 写入会话与对应商机 */
+app.post('/api/chats/profile', (req, res) => {
+  const b = req.body || {};
+  const sessionId = String(b.sessionId || '').slice(0, 64).replace(/[^a-zA-Z0-9_-]/g, '');
+  if (!sessionId) return res.status(400).json({ error: '无效会话' });
+  const chats = readChats();
+  const chat = chats.find((c) => c.sessionId === sessionId);
+  if (!chat) return res.status(404).json({ error: '会话不存在，请先发送一条消息' });
+  chat.visitor = chat.visitor || {};
+  ['name', 'email', 'phone', 'company', 'country'].forEach((k) => {
+    if (b[k] != null && String(b[k]).trim()) chat.visitor[k] = String(b[k]).trim().slice(0, k === 'email' ? 160 : 100);
+  });
+  writeChats(chats);
+  const lead = upsertLeadFromChat(chat, Object.assign({}, chat.visitor, {
+    productSlug: chat.productSlug, productName: chat.productName,
+    productImage: chat.productImage, productPrice: chat.productPrice,
+  }));
+  res.json({ ok: true, leadId: lead && lead.id });
 });
 function canViewChats(user) {
   return user && (user.role === 'admin' || user.role === 'sales');
@@ -628,6 +777,8 @@ app.get('/api/chats', requireAuth, (req, res) => {
   if (!canViewChats(req.user)) return res.status(403).json({ error: '无权限' });
   const list = readChats().map((c) => ({
     id: c.id, sessionId: c.sessionId, lang: c.lang, page: c.page,
+    productName: c.productName, productSlug: c.productSlug,
+    visitor: c.visitor || {},
     createdAt: c.createdAt, updatedAt: c.updatedAt, ip: c.ip,
     messageCount: (c.messages || []).length,
     preview: ((c.messages || []).filter((m) => m.role === 'user').slice(-1)[0] || {}).text || '',
@@ -872,7 +1023,7 @@ app.get(/^\/(?!api\/).*/, (req, res) => res.redirect('/'));
 ['SIGINT', 'SIGTERM'].forEach((sig) => process.on(sig, () => { flushStats(); process.exit(0); }));
 
 // 部署校验：curl /api/build 应看到本文件里的 buildId
-const BUILD_ID = '20260716d-ai-chat';
+const BUILD_ID = '20260716e-opportunity';
 app.get('/api/build', (req, res) => {
   res.json({
     ok: true,

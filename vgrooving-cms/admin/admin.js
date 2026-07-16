@@ -37,7 +37,13 @@
   function isAdmin() { return me && me.role === 'admin'; }
   const ROLE_LABEL = { admin: '管理员', sales: '业务员', editor: '制作员' };
 
-    const SEC_TITLES = { dashboard: '仪表盘', brand: '品牌与导航', hero: '首页文案', wizard: '智能选型', products: '产品管理', contact: '联系页', chat: '在线客服', chats: '聊天记录', inbox: '收件箱', media: '媒体库', tools: '翻译与备份', accounts: '账号管理', account: '账号安全' };
+    const SEC_TITLES = { dashboard: '仪表盘', brand: '品牌与导航', hero: '首页文案', wizard: '智能选型', products: '产品管理', contact: '联系页', chat: '在线客服', chats: '聊天记录', inbox: '商机中心', media: '媒体库', tools: '翻译与备份', accounts: '账号管理', account: '账号安全' };
+  const LEAD_SOURCE_LABEL = { chat: '智能询盘', form: '表单询盘', product: '产品询盘' };
+  function sourceLabel(s) { return LEAD_SOURCE_LABEL[s] || s || '表单询盘'; }
+  function sourceBadge(s) {
+    const colors = { chat: '#2563eb', form: '#16a34a', product: '#d97706' };
+    return '<span style="display:inline-block;padding:0.12rem 0.45rem;border-radius:4px;font-size:0.72rem;background:' + (colors[s] || '#64748b') + ';color:#fff">' + esc(sourceLabel(s)) + '</span>';
+  }
   const LEAD_STATUS_LABEL = { new: '未处理', following: '跟进中', replied: '已回复', won: '已成交', closed: '已关闭' };
   const LEAD_STATUS_KEYS = ['new', 'following', 'replied', 'won', 'closed'];
   function statusLabel(st) { return LEAD_STATUS_LABEL[st] || LEAD_STATUS_LABEL.new; }
@@ -1172,15 +1178,36 @@
     loadList();
   }
 
-  // ============ 收件箱 / 商机（询盘） ============
-  let inboxFilter = 'all';
+  // ============ 商机中心（询盘 + AI 对话） ============
+  let inboxFilter = 'all'; // status
+  let inboxSource = 'all'; // chat|form|product|all
   let inboxOpenId = null;
   async function renderInbox() {
     const sec = $('#secInbox'); sec.innerHTML = '';
-    const c = card('商机 / 询盘');
-    hint(c, me && me.role === 'sales'
-      ? '这里只显示分配给你的询盘。可修改跟进状态、写内部备注，并通过邮件回复买家（需管理员先在「翻译与备份」配置 SMTP）。'
-      : '来自产品详情页的询盘会自动归属该产品的负责人。可分配负责人、更新跟进状态，并邮件回复买家。');
+    const c = card('商机中心');
+    hint(c, '智能询盘 = 前台 AI 客服产生的会话；表单/产品询盘 = 联系页或产品页提交。可查看买家信息，并打开聊天窗口看 AI 聊了什么。');
+    const tabs = document.createElement('div'); tabs.style.cssText = 'display:flex;gap:0.4rem;flex-wrap:wrap;margin-bottom:0.7rem';
+    const leads = await loadLeads(true); updateInboxBadge();
+    const counts = {
+      all: leads.length,
+      chat: leads.filter((l) => l.source === 'chat').length,
+      form: leads.filter((l) => l.source === 'form' || !l.source).length,
+      product: leads.filter((l) => l.source === 'product').length,
+    };
+    [
+      ['all', '全部商机'],
+      ['chat', '智能询盘'],
+      ['form', '表单询盘'],
+      ['product', '产品询盘'],
+    ].forEach(([key, label]) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'btn ' + (inboxSource === key ? '' : 'ghost');
+      b.textContent = label + ' (' + (counts[key] || 0) + ')';
+      b.addEventListener('click', () => { inboxSource = key; renderInbox(); });
+      tabs.appendChild(b);
+    });
+    c.appendChild(tabs);
     const bar = document.createElement('div'); bar.style.cssText = 'display:flex;gap:0.5rem;margin-bottom:0.8rem;flex-wrap:wrap;align-items:center';
     const refresh = document.createElement('button'); refresh.className = 'btn ghost'; refresh.textContent = '↻ 刷新'; refresh.addEventListener('click', () => { leadsCache = null; renderInbox(); });
     const exp = document.createElement('button'); exp.className = 'btn ghost'; exp.textContent = '导出 CSV';
@@ -1191,40 +1218,56 @@
     bar.appendChild(refresh); bar.appendChild(exp); bar.appendChild(filterSel); c.appendChild(bar);
     const host = document.createElement('div'); host.innerHTML = '<div style="color:var(--muted)">加载中...</div>'; c.appendChild(host);
     sec.appendChild(c);
-    const leads = await loadLeads(true); updateInboxBadge();
     const canAssign = isAdmin();
-    const filtered = inboxFilter === 'all' ? leads : leads.filter((l) => (l.status || 'new') === inboxFilter);
+    let filtered = leads.slice();
+    if (inboxSource === 'chat') filtered = filtered.filter((l) => l.source === 'chat');
+    else if (inboxSource === 'form') filtered = filtered.filter((l) => l.source === 'form' || !l.source);
+    else if (inboxSource === 'product') filtered = filtered.filter((l) => l.source === 'product');
+    if (inboxFilter !== 'all') filtered = filtered.filter((l) => (l.status || 'new') === inboxFilter);
     exp.addEventListener('click', () => {
-      const rows = [['时间', '状态', '姓名', '邮箱', '公司', '产品', '语言', '负责人', '回复数', '内容', '备注']].concat(leads.map((l) => [
-        new Date(l.time).toLocaleString(), statusLabel(l.status || 'new'), l.name, l.email, l.company, l.product, l.lang, ownerName(l.owner),
-        (l.replies || []).length, (l.message || '').replace(/\n/g, ' '), (l.note || '').replace(/\n/g, ' '),
+      const rows = [['时间', '来源', '标题', '状态', '姓名', '邮箱', '电话', '地区', '公司', '产品', '语言', '负责人', '内容']].concat(leads.map((l) => [
+        new Date(l.time).toLocaleString(), sourceLabel(l.source), l.title || '', statusLabel(l.status || 'new'),
+        l.name, l.email, l.phone, l.country, l.company, l.product, l.lang, ownerName(l.owner),
+        (l.message || '').replace(/\n/g, ' '),
       ]));
       const csv = '\ufeff' + rows.map((r) => r.map((x) => '"' + String(x == null ? '' : x).replace(/"/g, '""') + '"').join(',')).join('\n');
       const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' })); a.download = 'leads.csv'; a.click();
     });
-    if (!leads.length) { host.innerHTML = '<div style="color:var(--muted)">暂无询盘。前台联系页/产品页提交后会显示在这里。</div>'; return; }
-    if (!filtered.length) { host.innerHTML = '<div style="color:var(--muted)">当前筛选下没有询盘。</div>'; return; }
+    if (!leads.length) { host.innerHTML = '<div style="color:var(--muted)">暂无商机。访客与 AI 聊天或提交表单后会出现在这里。</div>'; return; }
+    if (!filtered.length) { host.innerHTML = '<div style="color:var(--muted)">当前筛选下没有商机。</div>'; return; }
     host.innerHTML = '';
     const table = document.createElement('table'); table.className = 'ptable';
-    table.innerHTML = '<thead><tr><th>询盘 / 买家</th><th>状态</th><th>负责人</th><th>发送时间</th><th class="pt-ops">操作</th></tr></thead>';
+    table.innerHTML = '<thead><tr><th>询盘标题</th><th>类型</th><th>买家信息</th><th>产品</th><th>状态</th><th>负责人</th><th>时间</th><th class="pt-ops">操作</th></tr></thead>';
     const tb = document.createElement('tbody'); table.appendChild(tb);
     filtered.forEach((l) => {
       const tr = document.createElement('tr'); if (!l.read || l.status === 'new') tr.style.fontWeight = '500';
-      const buyer = [l.email, l.company].filter(Boolean).join(' · ');
-      const replyN = (l.replies || []).length;
+      const title = l.title || (l.source === 'chat' ? '在线客服咨询' : (l.message || '').slice(0, 40));
+      const img = l.productImage
+        ? '<img src="' + esc(l.productImage) + '" alt="" style="width:44px;height:44px;object-fit:cover;border-radius:6px;border:1px solid var(--border)">'
+        : '<div style="width:44px;height:44px;border-radius:6px;background:var(--bg);border:1px solid var(--border)"></div>';
       tr.innerHTML =
-        '<td style="max-width:420px">' + (l.read ? '' : '<span style="color:var(--brand)">● </span>') + '<b>' + esc(l.name || '(未填姓名)') + '</b>' +
-        (l.product ? ' <span class="pt-sub">· ' + esc(l.product) + '</span>' : '') +
-        (buyer ? '<div class="pt-sub">' + esc(buyer) + '</div>' : '') +
-        '<div class="msg" style="font-size:0.85rem;white-space:pre-wrap;margin-top:0.2rem">' + esc(l.message || '') + '</div>' +
-        (replyN ? '<div class="pt-sub" style="margin-top:0.2rem">已回复 ' + replyN + ' 次' + (l.lastReplyAt ? ' · 最近 ' + new Date(l.lastReplyAt).toLocaleString() : '') + '</div>' : '') +
+        '<td style="max-width:260px">' + (l.read ? '' : '<span style="color:var(--brand)">● </span>') +
+        '<a href="#" class="lead-title-link" style="color:inherit;text-decoration:underline">' + esc(title) + '</a>' +
+        '<div class="pt-sub" style="margin-top:0.2rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:240px">' + esc((l.message || '').replace(/\n/g, ' ')) + '</div></td>' +
+        '<td>' + sourceBadge(l.source || 'form') + '</td>' +
+        '<td style="min-width:160px;font-size:0.85rem">' +
+        '<div><b>' + esc(l.name || '(未留姓名)') + '</b></div>' +
+        (l.email ? '<div class="pt-sub">' + esc(l.email) + '</div>' : '') +
+        (l.phone ? '<div class="pt-sub">' + esc(l.phone) + '</div>' : '') +
+        (l.country || l.company ? '<div class="pt-sub">' + esc([l.country, l.company].filter(Boolean).join(' · ')) + '</div>' : '') +
         '</td>' +
+        '<td><div style="display:flex;gap:0.45rem;align-items:center">' + img +
+        '<div><div style="font-size:0.85rem">' + esc(l.product || '—') + '</div>' +
+        (l.productPrice ? '<div class="pt-sub">' + esc(l.productPrice) + '</div>' : '') + '</div></div></td>' +
         '<td class="pt-status"></td>' +
         '<td class="pt-owner"></td>' +
-        '<td class="pt-sub">' + esc(new Date(l.time).toLocaleString()) + '</td>' +
+        '<td class="pt-sub" style="white-space:nowrap">' + esc(new Date(l.updatedAt || l.time).toLocaleString()) +
+        '<div style="opacity:.7">发生 ' + esc(new Date(l.time).toLocaleDateString()) + '</div></td>' +
         '<td class="pt-ops"></td>';
+      const titleLink = tr.querySelector('.lead-title-link');
+      titleLink.addEventListener('click', (e) => { e.preventDefault(); inboxOpenId = l.id; showLeadDetail(l); });
       const stTd = tr.querySelector('.pt-status');
-      const stSel = document.createElement('select'); stSel.className = 'inp'; stSel.style.minWidth = '100px';
+      const stSel = document.createElement('select'); stSel.className = 'inp'; stSel.style.minWidth = '96px';
       stSel.innerHTML = LEAD_STATUS_KEYS.map((k) => '<option value="' + k + '"' + ((l.status || 'new') === k ? ' selected' : '') + '>' + statusLabel(k) + '</option>').join('');
       stSel.addEventListener('change', async () => {
         const r = await fetch('/api/leads/status', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: l.id, status: stSel.value }) });
@@ -1234,25 +1277,78 @@
       stTd.appendChild(stSel);
       const ownerTd = tr.querySelector('.pt-owner');
       if (canAssign) {
-        const sel = document.createElement('select'); sel.className = 'inp'; sel.style.minWidth = '110px';
+        const sel = document.createElement('select'); sel.className = 'inp'; sel.style.minWidth = '100px';
         sel.innerHTML = '<option value="">未分配</option>' + (usersCache || []).filter((u) => u.role !== 'editor').map((u) => '<option value="' + esc(u.id) + '"' + (l.owner === u.id ? ' selected' : '') + '>' + esc(u.name) + '</option>').join('');
         sel.addEventListener('change', async () => { await fetch('/api/leads/assign', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: l.id, owner: sel.value }) }); l.owner = sel.value; toast('已分配', 'ok'); });
         ownerTd.appendChild(sel);
       } else { ownerTd.textContent = ownerName(l.owner); }
       const ops = tr.querySelector('.pt-ops');
-      const open = document.createElement('button'); open.textContent = '跟进/回复';
+      if (l.source === 'chat' || l.chatId || l.sessionId) {
+        const viewChat = document.createElement('button'); viewChat.textContent = '查看对话';
+        viewChat.addEventListener('click', () => showLeadChat(l));
+        ops.appendChild(viewChat);
+      }
+      const open = document.createElement('button'); open.textContent = '回复买家';
       open.addEventListener('click', () => { inboxOpenId = l.id; showLeadDetail(l); });
-      const rd = document.createElement('button'); rd.textContent = l.read ? '标未读' : '标已读';
-      rd.addEventListener('click', async () => { await fetch('/api/leads/read', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: l.id, read: !l.read }) }); leadsCache = null; renderInbox(); });
       const del = document.createElement('button'); del.className = 'del'; del.textContent = '删除';
-      del.addEventListener('click', async () => { if (!confirm('删除该条询盘？')) return; await fetch('/api/leads', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: l.id }) }); leadsCache = null; renderInbox(); });
-      ops.appendChild(open); ops.appendChild(rd); ops.appendChild(del);
+      del.addEventListener('click', async () => { if (!confirm('删除该条商机？')) return; await fetch('/api/leads', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: l.id }) }); leadsCache = null; renderInbox(); });
+      ops.appendChild(open); ops.appendChild(del);
       tb.appendChild(tr);
     });
     host.appendChild(table);
     if (inboxOpenId) {
       const openLead = leads.find((x) => x.id === inboxOpenId);
       if (openLead) showLeadDetail(openLead);
+    }
+  }
+
+  async function showLeadChat(l) {
+    let panel = $('#leadChatPanel');
+    if (!panel) {
+      panel = document.createElement('div');
+      panel.id = 'leadChatPanel';
+      panel.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:85;display:flex;align-items:center;justify-content:center;padding:1rem';
+      document.body.appendChild(panel);
+    }
+    panel.classList.remove('hidden');
+    panel.innerHTML = '<div style="background:var(--card);width:min(720px,100%);max-height:90vh;border-radius:12px;border:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden">' +
+      '<div style="padding:0.9rem 1rem;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;gap:0.5rem;align-items:flex-start">' +
+      '<div><div style="font-weight:600">' + esc(l.name || '访客') + ' <span style="font-weight:400;opacity:.75">· AI 接待记录</span></div>' +
+      '<div class="pt-sub">' + sourceBadge(l.source || 'chat') + ' ' + esc([l.country, l.email, l.phone].filter(Boolean).join(' · ')) + '</div></div>' +
+      '<button class="btn ghost" type="button" id="leadChatClose">关闭</button></div>' +
+      (l.product ? '<div style="padding:0.65rem 1rem;border-bottom:1px solid var(--border);display:flex;gap:0.6rem;align-items:center;background:var(--bg)">' +
+        (l.productImage ? '<img src="' + esc(l.productImage) + '" style="width:48px;height:48px;object-fit:cover;border-radius:6px">' : '') +
+        '<div><div style="font-weight:500">' + esc(l.product) + '</div>' +
+        (l.productPrice ? '<div class="pt-sub">' + esc(l.productPrice) + '</div>' : '') + '</div></div>' : '') +
+      '<div id="leadChatThread" style="flex:1;overflow:auto;padding:0.9rem 1rem;min-height:240px"><div class="pt-sub">加载对话中…</div></div>' +
+      '<div style="padding:0.7rem 1rem;border-top:1px solid var(--border);display:flex;gap:0.5rem">' +
+      '<button class="btn" type="button" id="leadChatToReply">回复买家</button></div></div>';
+    const close = () => { panel.classList.add('hidden'); panel.onclick = null; };
+    panel.querySelector('#leadChatClose').addEventListener('click', close);
+    panel.onclick = (e) => { if (e.target === panel) close(); };
+    panel.querySelector('#leadChatToReply').addEventListener('click', () => { close(); showLeadDetail(l); });
+    const thread = panel.querySelector('#leadChatThread');
+    try {
+      const r = await fetch('/api/leads/' + encodeURIComponent(l.id));
+      const j = await r.json();
+      const chat = j.chat;
+      const msgs = (chat && chat.messages) || [];
+      if (!msgs.length) { thread.innerHTML = '<div class="pt-sub">暂无聊天消息（可能会话尚未同步）。可到「聊天记录」查看原始会话。</div>'; return; }
+      thread.innerHTML = '';
+      msgs.forEach((m) => {
+        const row = document.createElement('div');
+        const isAgent = m.role === 'agent';
+        row.style.cssText = 'display:flex;margin:0.4rem 0;' + (isAgent ? 'justify-content:flex-end' : '');
+        row.innerHTML = '<div style="max-width:78%;padding:0.55rem 0.75rem;border-radius:10px;font-size:0.88rem;white-space:pre-wrap;' +
+          (isAgent ? 'background:var(--brand);color:#fff' : 'background:var(--bg);border:1px solid var(--border)') + '">' +
+          '<div style="opacity:.75;font-size:0.68rem;margin-bottom:0.15rem">' + (isAgent ? 'AI 客服' : '买家') +
+          (m.time ? ' · ' + esc(new Date(m.time).toLocaleString()) : '') + '</div>' + esc(m.text || '') + '</div>';
+        thread.appendChild(row);
+      });
+      await fetch('/api/leads/read', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: l.id, read: true }) });
+      l.read = true; updateInboxBadge();
+    } catch (e) {
+      thread.innerHTML = '<div style="color:var(--danger)">加载失败</div>';
     }
   }
 
@@ -1267,14 +1363,20 @@
     panel.classList.remove('hidden');
     panel.innerHTML = '';
     const box = document.createElement('div');
-    box.style.cssText = 'background:var(--card);color:var(--text);width:min(640px,100%);max-height:90vh;overflow:auto;border-radius:10px;padding:1.1rem 1.2rem;border:1px solid var(--border)';
+    box.style.cssText = 'background:var(--card);color:var(--text);width:min(680px,100%);max-height:90vh;overflow:auto;border-radius:10px;padding:1.1rem 1.2rem;border:1px solid var(--border)';
     box.innerHTML =
       '<div style="display:flex;justify-content:space-between;gap:0.5rem;align-items:flex-start;margin-bottom:0.8rem">' +
-      '<div><h3 style="margin:0 0 0.3rem">跟进：' + esc(l.name || '(未填姓名)') + '</h3>' +
-      statusBadge(l.status || 'new') +
-      '<div class="pt-sub" style="margin-top:0.3rem">' + esc([l.email, l.company, l.product].filter(Boolean).join(' · ')) + '</div></div>' +
+      '<div><h3 style="margin:0 0 0.3rem">' + esc(l.title || l.name || '商机跟进') + '</h3>' +
+      statusBadge(l.status || 'new') + ' ' + sourceBadge(l.source || 'form') +
+      '<div class="pt-sub" style="margin-top:0.35rem">买家：' + esc(l.name || '—') +
+      (l.email ? ' · ' + esc(l.email) : '') + (l.phone ? ' · ' + esc(l.phone) : '') +
+      (l.country ? ' · ' + esc(l.country) : '') + (l.company ? ' · ' + esc(l.company) : '') + '</div></div>' +
       '<button class="btn ghost" type="button" id="leadClose">关闭</button></div>' +
+      (l.product ? '<div style="display:flex;gap:0.6rem;align-items:center;margin-bottom:0.8rem;padding:0.55rem;border:1px solid var(--border);border-radius:8px;background:var(--bg)">' +
+        (l.productImage ? '<img src="' + esc(l.productImage) + '" style="width:52px;height:52px;object-fit:cover;border-radius:6px">' : '') +
+        '<div><div>' + esc(l.product) + '</div>' + (l.productPrice ? '<div class="pt-sub">' + esc(l.productPrice) + '</div>' : '') + '</div></div>' : '') +
       '<div class="msg" style="white-space:pre-wrap;padding:0.7rem;border:1px solid var(--border);border-radius:8px;margin-bottom:0.8rem;background:var(--bg)">' + esc(l.message || '') + '</div>' +
+      ((l.source === 'chat' || l.chatId) ? '<button class="btn ghost" type="button" id="leadOpenChat" style="margin-bottom:0.8rem">💬 查看 AI 完整对话</button>' : '') +
       '<div class="lbl">内部备注</div><textarea class="inp" id="leadNote" rows="2" style="width:100%;margin-bottom:0.6rem">' + esc(l.note || '') + '</textarea>' +
       '<div style="display:flex;gap:0.5rem;margin-bottom:1rem;flex-wrap:wrap"><button class="btn ghost" type="button" id="leadSaveNote">保存备注/状态</button>' +
       '<select class="inp" id="leadStatusSel" style="width:auto">' + LEAD_STATUS_KEYS.map((k) => '<option value="' + k + '"' + ((l.status || 'new') === k ? ' selected' : '') + '>' + statusLabel(k) + '</option>').join('') + '</select></div>' +
@@ -1300,6 +1402,8 @@
     const close = () => { panel.classList.add('hidden'); inboxOpenId = null; panel.onclick = null; };
     box.querySelector('#leadClose').addEventListener('click', close);
     panel.onclick = (e) => { if (e.target === panel) close(); };
+    const openChatBtn = box.querySelector('#leadOpenChat');
+    if (openChatBtn) openChatBtn.addEventListener('click', () => { close(); showLeadChat(l); });
     box.querySelector('#leadSaveNote').addEventListener('click', async () => {
       const status = box.querySelector('#leadStatusSel').value;
       const note = box.querySelector('#leadNote').value;

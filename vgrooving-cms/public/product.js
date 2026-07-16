@@ -225,6 +225,12 @@
       return;
     }
     if (L.meta) document.title = p.name + ' | ' + (L.brandName || 'V槽PRO');
+    window.VG.productContext = {
+      productSlug: p.slug || p.id,
+      productName: p.name || '',
+      productImage: (p.cardImage) || (p.gallery && p.gallery[0] && p.gallery[0].src) || '',
+      productPrice: (p.price && (p.price.main || p.price.usd)) || '',
+    };
     const ui = L.ui || {};
     document.getElementById('breadcrumb').innerHTML =
       '<a href="' + C.homeHref(window.VG.lang) + '">' + esc(ui.breadcrumbHome || '首页') + '</a> › ' +

@@ -22,11 +22,14 @@
     const fields = (c.formFields || []);
     const formInputs =
       '<div class="form-grid2">' +
-      '<input id="leadName" type="text" placeholder="' + esc(fields[0] || '') + '">' +
-      '<input id="leadEmail" type="email" placeholder="' + esc(fields[1] || '') + '">' +
+      '<input id="leadName" type="text" placeholder="' + esc(fields[0] || '姓名') + '">' +
+      '<input id="leadEmail" type="email" placeholder="' + esc(fields[1] || '邮箱') + '">' +
       '</div>' +
-      (fields[2] ? '<input id="leadCompany" type="text" placeholder="' + esc(fields[2]) + '">' : '') +
-      (fields[3] ? '<textarea id="leadMessage" rows="5" placeholder="' + esc(fields[3]) + '"></textarea>' : '') +
+      '<div class="form-grid2">' +
+      '<input id="leadPhone" type="tel" placeholder="电话 / WhatsApp">' +
+      '<input id="leadCompany" type="text" placeholder="' + esc(fields[2] || '公司') + '">' +
+      '</div>' +
+      '<textarea id="leadMessage" rows="5" placeholder="' + esc(fields[3] || '需求说明') + '"></textarea>' +
       '<input type="text" id="leadWebsite" tabindex="-1" autocomplete="off" style="position:absolute;left:-9999px" aria-hidden="true">' +
       '<div id="leadMsg" style="min-height:1.2rem;font-size:0.9rem;margin:0.2rem 0 0.6rem"></div>';
 
@@ -50,19 +53,22 @@
   async function submitLead() {
     const val = (id) => { const e = document.getElementById(id); return e ? e.value.trim() : ''; };
     const msg = document.getElementById('leadMsg');
-    const name = val('leadName'), email = val('leadEmail');
-    if (!name && !email) { if (msg) { msg.style.color = '#E60012'; msg.textContent = '请至少填写姓名或邮箱'; } return; }
+    const name = val('leadName'), email = val('leadEmail'), phone = val('leadPhone');
+    if (!name && !email && !phone) { if (msg) { msg.style.color = '#E60012'; msg.textContent = '请至少填写姓名、邮箱或电话'; } return; }
     const btn = document.getElementById('leadSubmit');
     if (btn) { btn.disabled = true; }
     try {
       const res = await fetch('/api/leads', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, email, company: val('leadCompany'), message: val('leadMessage'), website: val('leadWebsite'), lang: window.VG.lang, page: location.pathname }),
+        body: JSON.stringify({
+          name, email, phone, company: val('leadCompany'), message: val('leadMessage'),
+          website: val('leadWebsite'), lang: window.VG.lang, page: location.pathname, source: 'form',
+        }),
       });
       const j = await res.json();
       if (!res.ok) throw new Error(j.error || '提交失败');
       if (msg) { msg.style.color = 'var(--primary)'; msg.textContent = '✅ 已收到您的询价，我们会尽快联系您！'; }
-      ['leadName', 'leadEmail', 'leadCompany', 'leadMessage'].forEach((id) => { const e = document.getElementById(id); if (e) e.value = ''; });
+      ['leadName', 'leadEmail', 'leadPhone', 'leadCompany', 'leadMessage'].forEach((id) => { const e = document.getElementById(id); if (e) e.value = ''; });
     } catch (e) {
       if (msg) { msg.style.color = '#E60012'; msg.textContent = e.message; }
     }

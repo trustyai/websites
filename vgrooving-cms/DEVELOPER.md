@@ -61,43 +61,44 @@ vgrooving-cms/
 
 ## 5. 核心数据模型
 
-### 5.1 询盘 `leads.json`
+### 5.1 询盘 / 商机 `leads.json`
 
 ```json
 {
   "id": "hex",
+  "source": "chat|form|product",
+  "title": "Chat about 气动V槽成型机",
   "name": "",
   "email": "",
+  "phone": "",
   "company": "",
+  "country": "",
   "message": "",
   "lang": "zh",
   "page": "/products/xxx",
   "product": "产品名",
+  "productSlug": "pneumatic",
+  "productImage": "/uploads/...",
+  "productPrice": "¥28,000",
+  "chatId": "关联 chats.json 的 id",
+  "sessionId": "前台会话 id",
   "owner": "u_xxx",
   "time": 1710000000000,
   "read": false,
   "ip": "",
   "status": "new",
   "note": "内部备注",
-  "replies": [
-    {
-      "id": "",
-      "text": "",
-      "by": "u_xxx",
-      "byName": "张三",
-      "time": 1710000000000,
-      "emailed": true,
-      "emailError": ""
-    }
-  ],
+  "replies": [],
   "lastReplyAt": 0,
   "updatedAt": 1710000000000
 }
 ```
 
-**状态枚举**：`new` 未处理 · `following` 跟进中 · `replied` 已回复 · `won` 已成交 · `closed` 已关闭
+**来源**：`chat` 智能询盘（AI 客服）· `form` 表单询盘 · `product` 产品页询盘  
+**状态**：`new` / `following` / `replied` / `won` / `closed`  
 
-产品页提交的询盘会按产品 `owner` 自动归属。
+前台聊天有用户消息时会自动 upsert 为 `source=chat` 商机；访客可提交联系方式到 `/api/chats/profile`。  
+后台「商机中心」可按来源筛选，并「查看对话」加载关联 AI 聊天记录。
 
 ### 5.2 聊天记录 `chats.json`
 

@@ -151,9 +151,10 @@
       '<p>' + esc((VG.L.footer && VG.L.footer.copyright) || '') + '</p>';
   }
 
-  // ---------- 在线客服（自动回复 + 上报后台聊天记录） ----------
+  // ---------- 在线客服（自动回复 + 上报后台聊天记录 / 商机） ----------
   let chatSessionId = '';
   let chatLog = []; // { role, text, time }
+  let chatUserMsgCount = 0;
   function getChatSessionId() {
     try {
       chatSessionId = sessionStorage.getItem('vg_chat_sid') || '';
@@ -166,10 +167,26 @@
     }
     return chatSessionId;
   }
+  function currentProductCtx() {
+    if (VG.productContext) return VG.productContext;
+    const info = parsePath();
+    if (info.type !== 'product' || !info.slug) return {};
+    const p = (VG.L.products || []).find(function (x) { return (x.slug || x.id) === info.slug; });
+    if (!p) return { productSlug: info.slug };
+    let img = p.cardImage || '';
+    if (!img && p.gallery && p.gallery[0]) img = p.gallery[0].src || '';
+    return {
+      productSlug: p.slug || p.id,
+      productName: p.name || '',
+      productImage: img,
+      productPrice: (p.price && (p.price.main || p.price.usd)) || '',
+    };
+  }
   function reportChat(extraMsgs) {
     const append = Array.isArray(extraMsgs) ? extraMsgs : [];
     if (!append.length) return;
     const sid = getChatSessionId();
+    const ctx = currentProductCtx();
     try {
       fetch('/api/chats', {
         method: 'POST',
@@ -177,10 +194,63 @@
         body: JSON.stringify({
           sessionId: sid, append: true, messages: append,
           lang: VG.lang, page: location.pathname + location.search,
+          productSlug: ctx.productSlug || '', productName: ctx.productName || '',
+          productImage: ctx.productImage || '', productPrice: ctx.productPrice || '',
         }),
         keepalive: true,
       }).catch(function () {});
     } catch (e) { /* ignore */ }
+  }
+  function ensureChatContactBar() {
+    const win = document.getElementById('chatWindow');
+    if (!win || document.getElementById('chatContactBar')) return;
+    const bar = document.createElement('div');
+    bar.id = 'chatContactBar';
+    bar.className = 'chat-contact-bar';
+    bar.innerHTML =
+      '<button type="button" class="chat-contact-toggle" id="chatContactToggle">📋 留下联系方式，方便报价</button>' +
+      '<div class="chat-contact-form hidden" id="chatContactForm">' +
+      '<input id="ccName" placeholder="姓名 / Name" autocomplete="name">' +
+      '<input id="ccEmail" type="email" placeholder="邮箱 / Email" autocomplete="email">' +
+      '<input id="ccPhone" placeholder="电话 / WhatsApp" autocomplete="tel">' +
+      '<button type="button" class="c-send" id="ccSubmit" style="width:100%;border-radius:6px;margin-top:4px">提交联系方式</button>' +
+      '<div id="ccMsg" class="chat-contact-msg"></div></div>';
+    const chips = document.getElementById('chatChips');
+    if (chips && chips.parentNode) chips.parentNode.insertBefore(bar, chips);
+    else {
+      const row = win.querySelector('.chat-input-row');
+      if (row) win.insertBefore(bar, row);
+      else win.appendChild(bar);
+    }
+    const toggle = document.getElementById('chatContactToggle');
+    const form = document.getElementById('chatContactForm');
+    toggle.addEventListener('click', function () { form.classList.toggle('hidden'); });
+    document.getElementById('ccSubmit').addEventListener('click', function () {
+      const name = (document.getElementById('ccName').value || '').trim();
+      const email = (document.getElementById('ccEmail').value || '').trim();
+      const phone = (document.getElementById('ccPhone').value || '').trim();
+      const msg = document.getElementById('ccMsg');
+      if (!name && !email && !phone) { msg.textContent = '请至少填一项'; return; }
+      fetch('/api/chats/profile', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sessionId: getChatSessionId(), name: name, email: email, phone: phone }),
+      }).then(function (r) { return r.json(); }).then(function (j) {
+        if (!j.ok) throw new Error(j.error || '提交失败');
+        msg.textContent = '已收到，业务员会尽快联系您';
+        try { sessionStorage.setItem('vg_chat_profile', '1'); } catch (e) {}
+        setTimeout(function () { form.classList.add('hidden'); }, 1200);
+      }).catch(function (e) { msg.textContent = e.message || '提交失败'; });
+    });
+  }
+  function maybeShowContactBar() {
+    ensureChatContactBar();
+    try {
+      if (sessionStorage.getItem('vg_chat_profile') === '1') return;
+    } catch (e) { /* ignore */ }
+    if (chatUserMsgCount >= 1) {
+      const form = document.getElementById('chatContactForm');
+      if (form) form.classList.remove('hidden');
+    }
   }
   function renderChat() {
     const chat = VG.L.chat || {};
@@ -190,6 +260,7 @@
     set('cwStatus', chat.status || '');
     const msgs = document.getElementById('chatMsgs');
     chatLog = [];
+    chatUserMsgCount = 0;
     if (msgs) {
       msgs.innerHTML = '<div class="cm a"><div class="cm-av">' + esc(chat.avatar || '客') + '</div><div class="cm-bubble">' + esc(chat.greeting || '') + '</div></div>';
       if (chat.greeting) chatLog.push({ role: 'agent', text: String(chat.greeting), time: Date.now() });
@@ -199,6 +270,7 @@
       chips.innerHTML = (chat.quickChips || []).map((c) => '<div class="cq" data-q="' + esc(c) + '">' + esc(c) + '</div>').join('');
       chips.querySelectorAll('.cq').forEach((el) => el.addEventListener('click', () => cqSend(el.dataset.q)));
     }
+    ensureChatContactBar();
   }
   function autoReplyLocal(text) {
     const chat = VG.L.chat || {};
@@ -291,6 +363,8 @@
       if (chatLog.length === 1 && chatLog[0].role === 'agent') withGreeting = chatLog.slice();
     }
     chatLog.push(userMsg);
+    chatUserMsgCount += 1;
+    maybeShowContactBar();
     const typing = document.createElement('div');
     typing.className = 'cm a';
     typing.dataset.typing = '1';
