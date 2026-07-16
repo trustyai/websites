@@ -37,7 +37,7 @@
     document.getElementById('allProducts').innerHTML = (items || []).map((p) => C.productCard(p, false)).join('');
   }
 
-  // ---------- 智能选型 ----------
+  // ---------- 智能选型（后台可调：产品 match 标签 + wizard.locks 锁定推荐） ----------
   let sel = { material: null, thickness: null, scale: null, features: [] };
   function bindWizard() {
     const bind = (selector, key, single) => {
@@ -58,17 +58,63 @@
     bind('.scale-card', 'scale', true);
     bind('.feat-card', 'features', false);
   }
+  function tagHit(tags, prefix, key) {
+    if (!key) return false;
+    return tags.indexOf(prefix + key) > -1 || tags.indexOf(key) > -1;
+  }
+  function scoreProduct(p) {
+    const tags = p.match || [];
+    let score = 0;
+    if (sel.material && tagHit(tags, 'm:', sel.material)) score += 4;
+    if (sel.thickness && tagHit(tags, 't:', sel.thickness)) score += 5;
+    if (sel.scale && tagHit(tags, 's:', sel.scale)) score += 3;
+    (sel.features || []).forEach((f) => { if (tagHit(tags, 'f:', f)) score += 1; });
+    return score;
+  }
+  function lockMatches(lock) {
+    if (!lock || !(lock.productSlugs || []).length) return false;
+    if (lock.material && lock.material !== sel.material) return false;
+    if (lock.thickness && lock.thickness !== sel.thickness) return false;
+    if (lock.scale && lock.scale !== sel.scale) return false;
+    const need = lock.features || [];
+    if (need.length && !need.every((f) => (sel.features || []).indexOf(f) > -1)) return false;
+    // 至少命中一个已填条件，避免空规则锁死全部
+    return !!(lock.material || lock.thickness || lock.scale || need.length);
+  }
   function updateRec() {
     const box = document.getElementById('resultBox');
     const wrap = document.getElementById('resultProducts');
+    const note = document.getElementById('resultNote');
     if (!sel.material || !sel.thickness) { box.classList.remove('visible'); return; }
     box.classList.add('visible');
-    const products = (window.VG.L.products) || [];
-    let want = [sel.thickness]; if (sel.scale) want.push(sel.scale);
-    let recs = products.filter((p) => (p.match || []).some((m) => want.includes(m)));
+    const products = ((window.VG.L.products) || []).filter((p) => !p.deleted);
+    const bySlug = {};
+    products.forEach((p) => { bySlug[p.slug || p.id] = p; });
+
+    // 1) 后台「锁定推荐」优先（智能选型 → 推荐锁定）
+    const locks = (((window.VG.L.wizard) || {}).locks) || [];
+    const hitLocks = locks.filter(lockMatches);
+    let recs = [];
+    let noteText = '';
+    if (hitLocks.length) {
+      const slugs = [];
+      hitLocks.forEach((lk) => (lk.productSlugs || []).forEach((s) => { if (slugs.indexOf(s) < 0) slugs.push(s); }));
+      recs = slugs.map((s) => bySlug[s]).filter(Boolean);
+      noteText = hitLocks.map((lk) => lk.note || lk.title).filter(Boolean).join(' · ');
+    }
+
+    // 2) 否则按产品 match 标签打分（材料/厚度/规模/功能）
+    if (!recs.length) {
+      recs = products
+        .map((p) => ({ p, score: scoreProduct(p) }))
+        .filter((x) => x.score > 0)
+        .sort((a, b) => b.score - a.score)
+        .map((x) => x.p);
+    }
     if (!recs.length) recs = products.slice(0, 3);
-    recs = [...new Map(recs.map((p) => [p.id, p])).values()].slice(0, 4);
+    recs = [...new Map(recs.map((p) => [p.id || p.slug, p])).values()].slice(0, 4);
     wrap.innerHTML = recs.map((p, i) => C.productCard(p, i === 0)).join('');
+    if (note) note.textContent = noteText || '';
   }
 
   C.boot(function () {

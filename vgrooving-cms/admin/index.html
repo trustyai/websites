@@ -35,11 +35,31 @@ a{color:var(--brand);text-decoration:none}
 .sidebar .brand{display:flex;align-items:center;gap:0.6rem;padding:1.1rem 1.1rem;border-bottom:1px solid var(--border)}
 .sidebar .brand img{height:30px}
 .sidebar .brand b{font-size:0.98rem}
-.menu{flex:1;padding:0.7rem 0.6rem;overflow-y:auto}
-.menu-item{display:flex;align-items:center;gap:0.7rem;padding:0.65rem 0.9rem;border-radius:var(--radius);color:var(--muted);font-size:0.9rem;cursor:pointer;transition:all .15s;margin-bottom:0.15rem}
+.menu{flex:1;padding:0.55rem 0.5rem;overflow-y:auto}
+.menu-item{display:flex;align-items:center;gap:0.65rem;padding:0.55rem 0.75rem;border-radius:var(--radius);color:var(--muted);font-size:0.88rem;cursor:pointer;transition:all .15s;margin-bottom:0.12rem}
 .menu-item:hover{background:var(--panel-2);color:var(--text)}
 .menu-item.active{background:rgba(35,172,56,0.14);color:var(--brand);font-weight:600}
-.menu-item .ico{font-size:1.05rem;width:20px;text-align:center}
+.menu-item .ico{font-size:1.02rem;width:20px;text-align:center;flex-shrink:0}
+.menu-group{margin-bottom:0.2rem}
+.menu-group-title{display:flex;align-items:center;gap:0.65rem;padding:0.55rem 0.75rem;border-radius:var(--radius);color:var(--text);font-size:0.88rem;cursor:pointer;user-select:none}
+.menu-group-title:hover{background:var(--panel-2)}
+.menu-group-title .ico{width:20px;text-align:center}
+.menu-group-title .chev{margin-left:auto;font-size:0.7rem;color:var(--muted);transition:transform .15s}
+.menu-group.open .menu-group-title .chev{transform:rotate(180deg)}
+.menu-sub{display:none;padding:0.1rem 0 0.35rem 0.35rem}
+.menu-group.open .menu-sub{display:block}
+.menu-sub .menu-item{padding-left:2.1rem;font-size:0.84rem;position:relative}
+.menu-sub .menu-item::before{content:'';position:absolute;left:1.15rem;top:50%;width:5px;height:5px;border-radius:50%;background:var(--muted);transform:translateY(-50%);opacity:.55}
+.menu-group.hidden-by-role{display:none!important}
+.rte-up{display:inline-flex;align-items:center;justify-content:center;background:var(--panel);border:1px solid var(--border);color:var(--text);width:30px;height:28px;border-radius:5px;font-size:0.72rem;cursor:pointer;margin:0}
+.rte-up:hover{border-color:var(--brand)}
+.match-box{border:1px solid var(--border);border-radius:8px;padding:0.65rem 0.75rem;background:var(--panel-2)}
+.match-group{margin-bottom:0.55rem}
+.match-group:last-child{margin-bottom:0}
+.match-group-title{font-size:0.75rem;color:var(--muted);margin-bottom:0.3rem;font-weight:600}
+.match-checks{display:flex;flex-wrap:wrap;gap:0.35rem 0.7rem}
+.match-check{font-size:0.82rem;display:inline-flex;align-items:center;gap:0.25rem;cursor:pointer;color:var(--text)}
+.video-thumb{width:96px;height:54px;border-radius:6px;object-fit:cover;background:var(--panel-2);border:1px solid var(--border)}
 .sidebar .foot{padding:0.8rem;border-top:1px solid var(--border)}
 .main{margin-left:220px;flex:1;display:flex;flex-direction:column;min-width:0}
 .topbar{position:sticky;top:0;z-index:10;display:flex;align-items:center;gap:1rem;padding:0.9rem 1.4rem;background:var(--panel);backdrop-filter:blur(8px);border-bottom:1px solid var(--border);flex-wrap:wrap}
@@ -202,19 +222,67 @@ textarea.inp{resize:vertical;min-height:60px;line-height:1.5}
   <aside class="sidebar">
     <div class="brand"><img src="/assets/logo.png" alt=""><b>V槽 CMS</b></div>
     <nav class="menu" id="menu">
-      <div class="menu-item active" data-sec="dashboard"><span class="ico">📊</span><span>仪表盘</span></div>
-      <div class="menu-item" data-sec="brand"><span class="ico">🎨</span><span>品牌与导航</span></div>
-      <div class="menu-item" data-sec="hero"><span class="ico">🏠</span><span>首页文案</span></div>
-      <div class="menu-item" data-sec="wizard"><span class="ico">🧭</span><span>智能选型</span></div>
-      <div class="menu-item" data-sec="products"><span class="ico">📦</span><span>产品管理</span></div>
-      <div class="menu-item" data-sec="contact"><span class="ico">📞</span><span>联系页</span></div>
-      <div class="menu-item" data-sec="chat"><span class="ico">💬</span><span>在线客服</span></div>
-      <div class="menu-item" data-sec="chats"><span class="ico">🗂️</span><span>聊天记录</span></div>
-      <div class="menu-item" data-sec="inbox"><span class="ico">💼</span><span>商机中心 <span id="inboxBadge"></span></span></div>
-      <div class="menu-item" data-sec="media"><span class="ico">🖼️</span><span>媒体库</span></div>
-      <div class="menu-item" data-sec="tools"><span class="ico">🧰</span><span>翻译与备份</span></div>
-      <div class="menu-item" data-sec="accounts" id="menuAccounts"><span class="ico">👥</span><span>账号管理</span></div>
-      <div class="menu-item" data-sec="account"><span class="ico">🔒</span><span>账号安全</span></div>
+      <div class="menu-item active" data-sec="dashboard"><span class="ico">🏠</span><span>概况</span></div>
+
+      <div class="menu-group open" data-group="leads">
+        <div class="menu-group-title"><span class="ico">✉️</span><span>商机中心</span><span class="chev">▾</span></div>
+        <div class="menu-sub">
+          <div class="menu-item" data-sec="inbox"><span>全部商机 <span id="inboxBadge"></span></span></div>
+          <div class="menu-item" data-sec="chats"><span>聊天记录</span></div>
+          <div class="menu-item" data-sec="chat"><span>在线客服话术</span></div>
+        </div>
+      </div>
+
+      <div class="menu-group open" data-group="site">
+        <div class="menu-group-title"><span class="ico">📄</span><span>建站与维护</span><span class="chev">▾</span></div>
+        <div class="menu-sub">
+          <div class="menu-item" data-sec="products"><span>产品管理</span></div>
+          <div class="menu-item" data-sec="company"><span>公司信息</span></div>
+          <div class="menu-item" data-sec="wizard"><span>智能选型</span></div>
+          <div class="menu-item" data-sec="hero"><span>首页文案</span></div>
+          <div class="menu-item" data-sec="decorate"><span>网站装修</span></div>
+          <div class="menu-item" data-sec="brand"><span>品牌与导航</span></div>
+          <div class="menu-item" data-sec="contact"><span>联系页</span></div>
+          <div class="menu-item" data-sec="siteset"><span>网站设置 / SEO</span></div>
+        </div>
+      </div>
+
+      <div class="menu-group" data-group="video">
+        <div class="menu-group-title"><span class="ico">▶</span><span>视频中心</span><span class="chev">▾</span></div>
+        <div class="menu-sub">
+          <div class="menu-item" data-sec="videos"><span>视频列表</span></div>
+          <div class="menu-item" data-sec="videogroups"><span>视频分组</span></div>
+          <div class="menu-item" data-sec="videoanalytics"><span>数据分析</span></div>
+        </div>
+      </div>
+
+      <div class="menu-group" data-group="promo">
+        <div class="menu-group-title"><span class="ico">📈</span><span>推广服务</span><span class="chev">▾</span></div>
+        <div class="menu-sub">
+          <div class="menu-item" data-sec="promo"><span>推广与获客</span></div>
+        </div>
+      </div>
+
+      <div class="menu-item" data-sec="ai"><span class="ico">🤖</span><span>AI 智能中心</span></div>
+
+      <div class="menu-group" data-group="data">
+        <div class="menu-group-title"><span class="ico">📊</span><span>大数据中心</span><span class="chev">▾</span></div>
+        <div class="menu-sub">
+          <div class="menu-item" data-sec="bigdata"><span>行业数据分析</span></div>
+        </div>
+      </div>
+
+      <div class="menu-item" data-sec="logistics"><span class="ico">🌐</span><span>物流服务</span></div>
+
+      <div class="menu-group" data-group="system">
+        <div class="menu-group-title"><span class="ico">⚙</span><span>后台设置</span><span class="chev">▾</span></div>
+        <div class="menu-sub">
+          <div class="menu-item" data-sec="media"><span>媒体库</span></div>
+          <div class="menu-item" data-sec="tools"><span>翻译与备份</span></div>
+          <div class="menu-item" data-sec="accounts" id="menuAccounts"><span>账号管理</span></div>
+          <div class="menu-item" data-sec="account"><span>账号安全</span></div>
+        </div>
+      </div>
     </nav>
     <div class="foot">
       <a href="/" target="_blank" class="btn ghost block" style="text-align:center;margin-bottom:0.5rem;display:block">🔗 <span>查看前台</span></a>
@@ -237,10 +305,20 @@ textarea.inp{resize:vertical;min-height:60px;line-height:1.5}
       <div class="section" data-sec="hero" id="secHero"></div>
       <div class="section" data-sec="wizard" id="secWizard"></div>
       <div class="section" data-sec="products" id="secProducts"></div>
+      <div class="section" data-sec="company" id="secCompany"></div>
+      <div class="section" data-sec="decorate" id="secDecorate"></div>
+      <div class="section" data-sec="siteset" id="secSiteset"></div>
       <div class="section" data-sec="contact" id="secContact"></div>
       <div class="section" data-sec="chat" id="secChat"></div>
       <div class="section" data-sec="chats" id="secChats"></div>
       <div class="section" data-sec="inbox" id="secInbox"></div>
+      <div class="section" data-sec="videos" id="secVideos"></div>
+      <div class="section" data-sec="videogroups" id="secVideogroups"></div>
+      <div class="section" data-sec="videoanalytics" id="secVideoanalytics"></div>
+      <div class="section" data-sec="promo" id="secPromo"></div>
+      <div class="section" data-sec="ai" id="secAi"></div>
+      <div class="section" data-sec="bigdata" id="secBigdata"></div>
+      <div class="section" data-sec="logistics" id="secLogistics"></div>
       <div class="section" data-sec="media" id="secMedia"></div>
       <div class="section" data-sec="tools" id="secTools"></div>
       <div class="section" data-sec="accounts" id="secAccounts"></div>

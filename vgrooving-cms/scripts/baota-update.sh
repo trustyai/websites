@@ -7,7 +7,7 @@ set -euo pipefail
 BRANCH="cursor/multilang-cms-rebuild-78df"
 REPO="https://github.com/trustyai/websites.git"
 APP_DIR="${APP_DIR:-/www/vgrooving-cms}"
-BUILD_ID="20260716f-layout-fix"
+BUILD_ID="20260716g-admin-modules"
 PM2_NAME="${PM2_NAME:-vgrooving-cms}"
 
 echo "==> 目标目录: $APP_DIR"

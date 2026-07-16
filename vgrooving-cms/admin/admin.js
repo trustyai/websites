@@ -37,7 +37,14 @@
   function isAdmin() { return me && me.role === 'admin'; }
   const ROLE_LABEL = { admin: '管理员', sales: '业务员', editor: '制作员' };
 
-    const SEC_TITLES = { dashboard: '仪表盘', brand: '品牌与导航', hero: '首页文案', wizard: '智能选型', products: '产品管理', contact: '联系页', chat: '在线客服', chats: '聊天记录', inbox: '商机中心', media: '媒体库', tools: '翻译与备份', accounts: '账号管理', account: '账号安全' };
+  const SEC_TITLES = {
+    dashboard: '概况', brand: '品牌与导航', hero: '首页文案', wizard: '智能选型', products: '产品管理',
+    company: '公司信息', decorate: '网站装修', siteset: '网站设置 / SEO', contact: '联系页',
+    chat: '在线客服话术', chats: '聊天记录', inbox: '商机中心',
+    videos: '视频列表', videogroups: '视频分组', videoanalytics: '视频数据分析',
+    promo: '推广与获客', ai: 'AI 智能中心', bigdata: '行业数据分析', logistics: '物流服务',
+    media: '媒体库', tools: '翻译与备份', accounts: '账号管理', account: '账号安全',
+  };
   const LEAD_SOURCE_LABEL = { chat: '智能询盘', form: '表单询盘', product: '产品询盘' };
   function sourceLabel(s) { return LEAD_SOURCE_LABEL[s] || s || '表单询盘'; }
   function sourceBadge(s) {
@@ -52,16 +59,101 @@
     return '<span style="display:inline-block;padding:0.1rem 0.45rem;border-radius:4px;font-size:0.72rem;background:' + (colors[st] || 'var(--muted)') + ';color:#fff">' + esc(statusLabel(st)) + '</span>';
   }
 
-  // 简易富文本编辑器（无依赖，基于 contenteditable）
+  // 简易富文本编辑器（无依赖，基于 contenteditable；支持插图）
   function richEditor(obj, key) {
     const wrap = document.createElement('div'); wrap.className = 'row';
     const tb = document.createElement('div'); tb.className = 'rte-tb';
     const area = document.createElement('div'); area.className = 'rte-area'; area.contentEditable = 'true';
     area.innerHTML = obj[key] || '';
-    const cmd = (c, label, val) => { const b = document.createElement('button'); b.type = 'button'; b.title = label; b.innerHTML = label; b.addEventListener('mousedown', (e) => { e.preventDefault(); if (c === 'createLink') { const u = prompt('链接地址', 'https://'); if (u) document.execCommand(c, false, u); } else document.execCommand(c, false, val || null); area.focus(); obj[key] = area.innerHTML; markDirty(); }); return b; };
+    const sync = () => { obj[key] = area.innerHTML; markDirty(); };
+    const insertHtml = (html) => {
+      area.focus();
+      try { document.execCommand('insertHTML', false, html); } catch (e) { area.innerHTML += html; }
+      sync();
+    };
+    const cmd = (c, label, val) => {
+      const b = document.createElement('button'); b.type = 'button'; b.title = label; b.innerHTML = label;
+      b.addEventListener('mousedown', (e) => {
+        e.preventDefault();
+        if (c === 'createLink') { const u = prompt('链接地址', 'https://'); if (u) document.execCommand(c, false, u); }
+        else document.execCommand(c, false, val || null);
+        area.focus(); sync();
+      });
+      return b;
+    };
     [['bold', '<b>B</b>'], ['italic', '<i>I</i>'], ['underline', '<u>U</u>'], ['insertUnorderedList', '•'], ['insertOrderedList', '1.'], ['formatBlock', 'H', 'h3'], ['createLink', '🔗'], ['removeFormat', '⌫']].forEach((a) => tb.appendChild(cmd(a[0], a[1], a[2])));
-    area.addEventListener('input', () => { obj[key] = area.innerHTML; markDirty(); });
+    const imgBtn = document.createElement('button'); imgBtn.type = 'button'; imgBtn.title = '插入图片'; imgBtn.textContent = '🖼';
+    imgBtn.addEventListener('mousedown', (e) => e.preventDefault());
+    imgBtn.addEventListener('click', () => openPicker((f) => {
+      if (f.type === 'video') insertHtml('<p><video src="' + esc(f.url) + '" controls style="max-width:100%"></video></p>');
+      else insertHtml('<p><img src="' + esc(f.url) + '" alt="" style="max-width:100%"></p>');
+    }));
+    tb.appendChild(imgBtn);
+    const upLabel = document.createElement('label'); upLabel.className = 'rte-up'; upLabel.title = '上传并插入图片'; upLabel.textContent = '⬆图';
+    const upInp = document.createElement('input'); upInp.type = 'file'; upInp.accept = 'image/*'; upInp.className = 'hidden';
+    upInp.addEventListener('change', async () => {
+      if (!upInp.files[0]) return;
+      upLabel.textContent = '…';
+      try {
+        const r = await uploadFile(upInp.files[0]);
+        insertHtml('<p><img src="' + esc(r.url) + '" alt="" style="max-width:100%"></p>');
+      } catch (err) { toast(err.message || '上传失败', 'bad'); }
+      upLabel.textContent = '⬆图'; upInp.value = '';
+    });
+    upLabel.appendChild(upInp); tb.appendChild(upLabel);
+    area.addEventListener('input', sync);
     wrap.appendChild(tb); wrap.appendChild(area);
+    return wrap;
+  }
+
+  /** 选型匹配标签编辑：按智能选型选项勾选（写入 m:/t:/s:/f: 前缀，兼容旧无前缀标签） */
+  function matchTagsEditor(p) {
+    const wrap = document.createElement('div'); wrap.className = 'row';
+    const lab = document.createElement('label'); lab.className = 'lbl'; lab.textContent = '智能选型匹配（勾选后前台按选项推荐此机型）';
+    wrap.appendChild(lab);
+    const hintEl = document.createElement('div'); hintEl.className = 'hint'; hintEl.style.margin = '0 0 0.5rem';
+    hintEl.textContent = '标签会保存为 m:材料 / t:厚度 / s:规模 / f:功能。也可在「智能选型 → 推荐锁定」里按组合强制指定机型。';
+    wrap.appendChild(hintEl);
+    const w = (L().wizard) || {};
+    const groups = [
+      ['材料 m:', 'm:', (w.materials || []).map((x) => ({ key: x.key, label: x.name || x.key }))],
+      ['厚度 t:', 't:', (w.thickness || []).map((x) => ({ key: x.key, label: x.title || x.key }))],
+      ['产量 s:', 's:', (w.scale || []).map((x) => ({ key: x.key, label: x.title || x.key }))],
+      ['功能 f:', 'f:', (w.features || []).map((x) => ({ key: x.key, label: x.label || x.key }))],
+    ];
+    const box = document.createElement('div'); box.className = 'match-box';
+    const selected = new Set();
+    (p.match || []).forEach((t) => selected.add(t));
+    const isOn = (prefix, key) => selected.has(prefix + key) || selected.has(key);
+    groups.forEach(([title, prefix, opts]) => {
+      if (!opts.length) return;
+      const g = document.createElement('div'); g.className = 'match-group';
+      g.innerHTML = '<div class="match-group-title">' + esc(title) + '</div>';
+      const row = document.createElement('div'); row.className = 'match-checks';
+      opts.forEach((o) => {
+        if (!o.key) return;
+        const id = 'mk_' + prefix + o.key;
+        const label = document.createElement('label'); label.className = 'match-check';
+        const cb = document.createElement('input'); cb.type = 'checkbox'; cb.checked = isOn(prefix, o.key);
+        cb.addEventListener('change', () => {
+          // 统一写带前缀标签，并清掉同 key 的旧无前缀写法
+          const next = new Set((p.match || []).filter((t) => t !== o.key && t !== prefix + o.key));
+          groups.forEach(([, pfx, list]) => list.forEach((x) => {
+            if (!x.key) return;
+            const el = box.querySelector('input[data-tag="' + pfx + x.key + '"]');
+            if (el && el.checked) next.add(pfx + x.key);
+          }));
+          p.match = Array.from(next);
+          markDirty();
+        });
+        cb.dataset.tag = prefix + o.key;
+        label.appendChild(cb);
+        label.appendChild(document.createTextNode(' ' + (o.label || o.key)));
+        row.appendChild(label);
+      });
+      g.appendChild(row); box.appendChild(g);
+    });
+    wrap.appendChild(box);
     return wrap;
   }
 
@@ -196,7 +288,8 @@
     up.appendChild(fi); flex.appendChild(prev); flex.appendChild(up);
     flex.appendChild(pickBtn('从媒体库选', (f) => { data.brand.logo = f.url; markDirty(); renderBrand(); }));
     logoRow.appendChild(flex); c0.appendChild(logoRow);
-    c0.appendChild(field('默认语言', data, 'defaultLang', { select: true, options: (data.langs || []).map((l) => ({ value: l.code, label: l.code + ' · ' + l.label })) }));
+    hint(c0, '默认语言决定访客打开网站根路径 / 时看到的语言。平台默认建议 English；中文站请用 /zh。修改后需「保存全部修改」。');
+    c0.appendChild(field('默认语言（前台根路径）', data, 'defaultLang', { select: true, options: (data.langs || []).map((l) => ({ value: l.code, label: l.code + ' · ' + l.label })) }));
     sec.appendChild(c0);
 
     // 语言列表（共用）
@@ -297,6 +390,33 @@
     mkGroup('步骤4 · 特殊功能', 'features', '+ 添加功能', () => ({ key: 'new', label: '' }), (x, host) => {
       const g = document.createElement('div'); g.className = 'grid2'; g.appendChild(field('标识key', x, 'key')); g.appendChild(field('文字', x, 'label')); host.appendChild(g);
     });
+
+    // 推荐锁定：满足条件时前台强制展示指定机型（优先于标签打分）
+    const cLock = card('推荐锁定（按选项组合指定机型）');
+    hint(cLock, '当前台访客选中的材料/厚度/规模/功能「同时满足」某条规则时，优先展示该条里填写的产品 slug（逗号分隔，顺序即展示顺序）。不填的条件表示不限。产品本身也可在「产品编辑 → 智能选型匹配」勾选标签做兜底推荐。');
+    w.locks = w.locks || [];
+    const prodOpts = ((L().products) || []).filter((p) => !p.deleted).map((p) => (p.slug || p.id) + ' · ' + (p.name || ''));
+    renderList(cLock, w.locks, {
+      label: (x, i) => (x.title || ('锁定规则 ' + (i + 1))),
+      rerender: renderWizard,
+      addLabel: '+ 添加锁定规则',
+      makeDefault: () => ({ title: '新规则', material: '', thickness: '', scale: '', features: [], productSlugs: [], note: '' }),
+      fields: (x, host) => {
+        host.appendChild(field('规则名称', x, 'title', { placeholder: '如：灰板+薄料 → 入门机' }));
+        const g = document.createElement('div'); g.className = 'grid2';
+        const matOpts = [{ value: '', label: '（不限材料）' }].concat((w.materials || []).map((m) => ({ value: m.key, label: m.name || m.key })));
+        const thOpts = [{ value: '', label: '（不限厚度）' }].concat((w.thickness || []).map((m) => ({ value: m.key, label: m.title || m.key })));
+        const scOpts = [{ value: '', label: '（不限规模）' }].concat((w.scale || []).map((m) => ({ value: m.key, label: m.title || m.key })));
+        g.appendChild(field('材料', x, 'material', { select: true, options: matOpts }));
+        g.appendChild(field('厚度', x, 'thickness', { select: true, options: thOpts }));
+        g.appendChild(field('规模', x, 'scale', { select: true, options: scOpts }));
+        host.appendChild(g);
+        host.appendChild(csvField('需要勾选的功能 key（可空）', x, 'features', { placeholder: 'auto-feed, digital-control', hint: '须全部选中才命中；留空表示不限功能' }));
+        host.appendChild(csvField('推荐产品 slug（必填，逗号分隔）', x, 'productSlugs', { placeholder: 'manual, pneumatic', hint: prodOpts.slice(0, 8).join(' ｜ ') || '先去产品管理维护 slug' }));
+        host.appendChild(field('结果备注（显示在推荐区下方，可空）', x, 'note', { placeholder: '根据您的工况，优先推荐以下机型' }));
+      },
+    });
+    sec.appendChild(cLock);
   }
 
   function renderProducts() {
@@ -482,10 +602,8 @@
     cb.appendChild(g2);
     cb.appendChild(field('副标题（详情页标题下的介绍）', p, 'subtitle', { textarea: true, rows: 2 }));
     cb.appendChild(field('首页卡片描述', p, 'cardDesc', { textarea: true, rows: 2 }));
-    const g3 = document.createElement('div'); g3.className = 'grid2';
-    g3.appendChild(csvField('首页卡片标签(逗号)', p, 'cardTags'));
-    g3.appendChild(csvField('选型匹配(逗号)', p, 'match', { hint: 'thin/medium/thick/custom, small/large' }));
-    cb.appendChild(g3);
+    cb.appendChild(csvField('首页卡片标签(逗号)', p, 'cardTags'));
+    cb.appendChild(matchTagsEditor(p));
     const coverRow = document.createElement('div'); coverRow.className = 'row';
     coverRow.innerHTML = '<label class="lbl">首页卡片封面图</label>';
     if (p.cardImage) { const pv = document.createElement('div'); pv.className = 'logo-preview'; pv.style.marginBottom = '0.4rem'; pv.innerHTML = '<img src="' + esc(p.cardImage) + '">'; coverRow.appendChild(pv); }
@@ -577,9 +695,9 @@
       const g = document.createElement('div'); g.className = 'grid2'; g.appendChild(field('名称', x, 'k', { placeholder: '最大厚度' })); g.appendChild(field('值', x, 'v', { placeholder: '1-5mm' })); host.appendChild(g);
     } }); cs.appendChild(spc); sec.appendChild(cs);
 
-    // 产品描述（富文本）
-    const cdesc = card('产品描述');
-    hint(cdesc, '富文本，可加粗/列表/链接等；显示在产品详情页下方。');
+    // 产品描述（富文本 + 插图）
+    const cdesc = card('产品详情描述（富文本）');
+    hint(cdesc, '显示在产品详情页参数区下方。工具栏可加粗/列表/标题/链接；点 🖼 从媒体库插图，或 ⬆图 直接上传插入。');
     cdesc.appendChild(richEditor(p, 'description'));
     sec.appendChild(cdesc);
 
@@ -1448,11 +1566,294 @@
     });
   }
 
-  const RENDERERS = { dashboard: renderDashboard, brand: renderBrand, hero: renderHero, wizard: renderWizard, products: renderProducts, contact: renderContact, chat: renderChat, chats: renderChats, inbox: renderInbox, media: renderMedia, tools: renderTools, accounts: renderAccounts, account: renderAccount };
+  // ============ 建站：公司信息 / 装修 / 网站设置 ============
+  function ensureCompany() {
+    const l = L();
+    l.company = l.company || {};
+    const keys = [
+      ['profileTitle', 'Company Profile'], ['profileHtml', ''],
+      ['factoryTitle', 'Factory'], ['factoryHtml', ''],
+      ['contactTitle', 'Contact'], ['contactHtml', ''],
+      ['certTitle', 'Certifications'], ['certHtml', ''],
+      ['testimonialTitle', 'Testimonials'], ['testimonialHtml', ''],
+      ['newsTitle', 'News'], ['newsHtml', ''],
+      ['casesTitle', 'Cases'], ['casesHtml', ''],
+      ['blogTitle', 'Blog'], ['blogHtml', ''],
+      ['privacyTitle', 'Privacy Policy'], ['privacyHtml', ''],
+    ];
+    keys.forEach(([k, d]) => { if (l.company[k] == null) l.company[k] = d; });
+    return l.company;
+  }
+  function renderCompany() {
+    const sec = $('#secCompany'); sec.innerHTML = '';
+    const co = ensureCompany();
+    const c = card('【' + lang + '】公司信息栏目');
+    hint(c, '对应外贸站常见「公司资料 / 工厂 / 认证 / 新闻」等栏目。正文支持富文本与插图；前台可后续挂到独立页面，内容先在此维护。');
+    [
+      ['公司资料', 'profileTitle', 'profileHtml'],
+      ['工厂信息', 'factoryTitle', 'factoryHtml'],
+      ['联系信息', 'contactTitle', 'contactHtml'],
+      ['质量认证', 'certTitle', 'certHtml'],
+      ['客户赠言', 'testimonialTitle', 'testimonialHtml'],
+      ['新闻中心', 'newsTitle', 'newsHtml'],
+      ['案例中心', 'casesTitle', 'casesHtml'],
+      ['博客中心', 'blogTitle', 'blogHtml'],
+      ['隐私协议', 'privacyTitle', 'privacyHtml'],
+    ].forEach(([label, tk, hk]) => {
+      const block = document.createElement('div'); block.className = 'list-item';
+      block.innerHTML = '<div class="li-title" style="margin-bottom:0.5rem">' + esc(label) + '</div>';
+      block.appendChild(field('标题', co, tk));
+      block.appendChild(richEditor(co, hk));
+      c.appendChild(block);
+    });
+    sec.appendChild(c);
+  }
+  function renderDecorate() {
+    const sec = $('#secDecorate'); sec.innerHTML = '';
+    data.modules = data.modules || {}; data.modules.decorate = data.modules.decorate || {};
+    const d = data.modules.decorate;
+    const c = card('网站装修');
+    hint(c, '全局视觉微调。Logo / 导航请到「品牌与导航」；首页大图与文案请到「首页文案」。');
+    c.appendChild(field('主色（可选，如 #23AC38）', d, 'primaryColor', { placeholder: '#23AC38' }));
+    c.appendChild(field('装修备注（内部）', d, 'note', { textarea: true, rows: 3 }));
+    const jump = document.createElement('div'); jump.className = 'quick'; jump.style.marginTop = '0.8rem';
+    jump.innerHTML = '<button type="button" class="btn ghost" data-g="brand">去品牌与导航</button> <button type="button" class="btn ghost" data-g="hero">去首页文案</button> <button type="button" class="btn ghost" data-g="media">去媒体库</button>';
+    jump.querySelectorAll('button').forEach((b) => b.addEventListener('click', () => switchSection(b.dataset.g)));
+    c.appendChild(jump); sec.appendChild(c);
+  }
+  function renderSiteset() {
+    const sec = $('#secSiteset'); sec.innerHTML = '';
+    data.settings = data.settings || {};
+    const cs = card('网站设置 / 个性化 SEO');
+    hint(cs, '网站网址用于 sitemap；统计代码会插入前台页面 head。各语言页面标题/描述也可在「首页文案」SEO 区块维护。');
+    cs.appendChild(field('网站网址', data.settings, 'siteUrl', { placeholder: 'https://vgrooving.com' }));
+    cs.appendChild(field('统计代码（插入 head）', data.settings, 'headHtml', { textarea: true, rows: 3 }));
+    cs.appendChild(field('通知 Webhook（可留空）', data.settings, 'notifyWebhook', { placeholder: 'https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=...' }));
+    const l = L(); l.meta = l.meta || {};
+    const c2 = card('【' + lang + '】当前语言 SEO');
+    c2.appendChild(field('页面标题', l.meta, 'title'));
+    c2.appendChild(field('页面描述', l.meta, 'description', { textarea: true, rows: 2 }));
+    sec.appendChild(cs); sec.appendChild(c2);
+  }
+
+  // ============ 视频中心 ============
+  let videoEditId = null;
+  function ensureVideos() {
+    data.videos = data.videos || {};
+    data.videos.groups = data.videos.groups || [{ id: 'g_default', name: 'Default' }];
+    data.videos.items = data.videos.items || [];
+    return data.videos;
+  }
+  function renderVideogroups() {
+    const sec = $('#secVideogroups'); sec.innerHTML = '';
+    const v = ensureVideos();
+    const c = card('视频分组');
+    hint(c, '用于视频列表筛选；删除分组不会删除视频，仅清空其分组。');
+    renderList(c, v.groups, {
+      label: (x) => x.name || x.id, rerender: renderVideogroups, addLabel: '+ 添加分组',
+      makeDefault: () => ({ id: 'g_' + Date.now(), name: 'New Group' }),
+      fields: (x, host) => host.appendChild(field('分组名称', x, 'name')),
+    });
+    sec.appendChild(c);
+  }
+  function renderVideoanalytics() {
+    const sec = $('#secVideoanalytics'); sec.innerHTML = '';
+    const v = ensureVideos();
+    const items = v.items || [];
+    const c = card('视频数据分析');
+    const totalViews = items.reduce((s, x) => s + (Number(x.views) || 0), 0);
+    const published = items.filter((x) => (x.status || 'published') === 'published').length;
+    c.innerHTML = '<div class="stat-grid">' +
+      '<div class="stat"><div class="n">' + items.length + '</div><div class="l">视频总数</div></div>' +
+      '<div class="stat"><div class="n">' + published + '</div><div class="l">已发布</div></div>' +
+      '<div class="stat"><div class="n">' + totalViews + '</div><div class="l">总观看量（手动维护）</div></div>' +
+      '</div>';
+    hint(c, '观看量可在视频编辑里填写；接入第三方统计后可在此扩展自动拉取。');
+    sec.appendChild(c);
+  }
+  function renderVideos() {
+    const sec = $('#secVideos'); sec.innerHTML = '';
+    const v = ensureVideos();
+    if (videoEditId) {
+      const item = v.items.find((x) => x.id === videoEditId);
+      if (item) return renderVideoEditor(item);
+      videoEditId = null;
+    }
+    const c = card('视频列表');
+    const bar = document.createElement('div'); bar.className = 'ptoolbar';
+    const add = document.createElement('button'); add.className = 'btn'; add.type = 'button'; add.textContent = '+ 创建视频';
+    add.addEventListener('click', () => {
+      const it = { id: 'v_' + Date.now(), title: 'New Video', youtubeId: '', url: '', cover: '', groupId: (v.groups[0] && v.groups[0].id) || '', status: 'published', description: '', views: 0, duration: '', createdAt: Date.now(), createdBy: (me && me.name) || 'admin' };
+      v.items.unshift(it); videoEditId = it.id; markDirty(); renderVideos();
+    });
+    const yt = document.createElement('button'); yt.className = 'btn ghost'; yt.type = 'button'; yt.textContent = '自 YouTube 导入';
+    yt.addEventListener('click', () => {
+      const raw = prompt('粘贴 YouTube 链接或视频 ID', 'https://www.youtube.com/watch?v=');
+      if (!raw) return;
+      let id = raw.trim();
+      const m = id.match(/[?&]v=([\w-]{6,})/) || id.match(/youtu\.be\/([\w-]{6,})/) || id.match(/^([\w-]{6,})$/);
+      if (m) id = m[1];
+      const it = { id: 'v_' + Date.now(), title: 'YouTube ' + id, youtubeId: id, url: 'https://www.youtube.com/watch?v=' + id, cover: 'https://img.youtube.com/vi/' + id + '/hqdefault.jpg', groupId: (v.groups[0] && v.groups[0].id) || '', status: 'published', description: '', views: 0, duration: '', createdAt: Date.now(), createdBy: (me && me.name) || 'admin' };
+      v.items.unshift(it); videoEditId = it.id; markDirty(); renderVideos(); toast('已导入，请完善标题与描述后保存', 'ok');
+    });
+    const q = document.createElement('input'); q.className = 'inp grow'; q.placeholder = '搜索标题 / ID';
+    bar.appendChild(add); bar.appendChild(yt); bar.appendChild(q); c.appendChild(bar);
+
+    const scroll = document.createElement('div'); scroll.className = 'table-scroll';
+    const table = document.createElement('table'); table.className = 'ptable';
+    table.innerHTML = '<thead><tr><th>视频</th><th>发布状态</th><th>分组</th><th>创建时间</th><th>总观看量</th><th class="pt-ops">操作</th></tr></thead>';
+    const tb = document.createElement('tbody'); table.appendChild(tb);
+    const groupName = (id) => { const g = v.groups.find((x) => x.id === id); return g ? g.name : '—'; };
+    const paint = () => {
+      const qq = q.value.trim().toLowerCase();
+      tb.innerHTML = '';
+      v.items.filter((it) => !qq || (it.title || '').toLowerCase().indexOf(qq) > -1 || (it.id || '').toLowerCase().indexOf(qq) > -1 || (it.youtubeId || '').toLowerCase().indexOf(qq) > -1).forEach((it) => {
+        const tr = document.createElement('tr');
+        const cover = it.cover || (it.youtubeId ? ('https://img.youtube.com/vi/' + it.youtubeId + '/hqdefault.jpg') : '');
+        tr.innerHTML =
+          '<td><div style="display:flex;gap:0.65rem;align-items:center">' +
+          (cover ? '<img class="video-thumb" src="' + esc(cover) + '" alt="">' : '<div class="video-thumb"></div>') +
+          '<div><div style="font-weight:600">' + esc(it.title || '—') + '</div><div class="pt-sub">ID: ' + esc(it.id) + (it.youtubeId ? ' · YT ' + esc(it.youtubeId) : '') + '</div></div></div></td>' +
+          '<td>' + esc(it.status === 'draft' ? '草稿' : '正常') + '</td>' +
+          '<td>' + esc(groupName(it.groupId)) + '</td>' +
+          '<td class="pt-sub">' + esc(fmtTime(it.createdAt)) + '<div>' + esc(it.createdBy || '') + '</div></td>' +
+          '<td>' + esc(String(it.views || 0)) + '</td><td class="pt-ops"></td>';
+        const ops = tr.querySelector('.pt-ops');
+        const edit = document.createElement('button'); edit.textContent = '编辑详情';
+        edit.addEventListener('click', () => { videoEditId = it.id; renderVideos(); });
+        const prev = document.createElement('button'); prev.textContent = '预览';
+        prev.addEventListener('click', () => {
+          const u = it.url || (it.youtubeId ? 'https://www.youtube.com/watch?v=' + it.youtubeId : '');
+          if (u) window.open(u, '_blank'); else toast('无预览地址', 'bad');
+        });
+        const del = document.createElement('button'); del.className = 'del'; del.textContent = '删除';
+        del.addEventListener('click', () => { if (!confirm('删除该视频？')) return; v.items = v.items.filter((x) => x.id !== it.id); markDirty(); renderVideos(); });
+        ops.appendChild(edit); ops.appendChild(prev); ops.appendChild(del);
+        tb.appendChild(tr);
+      });
+    };
+    q.addEventListener('input', paint); paint();
+    scroll.appendChild(table); c.appendChild(scroll); sec.appendChild(c);
+  }
+  function renderVideoEditor(it) {
+    const sec = $('#secVideos'); sec.innerHTML = '';
+    const v = ensureVideos();
+    const bar = document.createElement('div'); bar.style.cssText = 'display:flex;gap:0.6rem;margin-bottom:1rem;align-items:center';
+    const back = document.createElement('button'); back.className = 'btn ghost'; back.textContent = '← 返回列表';
+    back.addEventListener('click', () => { videoEditId = null; renderVideos(); });
+    bar.appendChild(back); bar.appendChild(document.createTextNode('编辑视频')); sec.appendChild(bar);
+    const c = card('视频详情');
+    c.appendChild(field('标题', it, 'title'));
+    const g = document.createElement('div'); g.className = 'grid2';
+    g.appendChild(field('YouTube ID', it, 'youtubeId', { placeholder: 'dQw4w9WgXcQ' }));
+    g.appendChild(field('视频 URL', it, 'url', { placeholder: 'https://...' }));
+    c.appendChild(g);
+    c.appendChild(field('封面图 URL', it, 'cover', { placeholder: '/uploads/xxx.jpg' }));
+    const coverBar = document.createElement('div'); coverBar.style.marginBottom = '0.8rem';
+    coverBar.appendChild(pickBtn('从媒体库选封面', (f) => { it.cover = f.url; markDirty(); renderVideoEditor(it); }));
+    c.appendChild(coverBar);
+    const g2 = document.createElement('div'); g2.className = 'grid3';
+    g2.appendChild(field('分组', it, 'groupId', { select: true, options: [{ value: '', label: '未分组' }].concat(v.groups.map((x) => ({ value: x.id, label: x.name }))) }));
+    g2.appendChild(field('发布状态', it, 'status', { select: true, options: [{ value: 'published', label: '正常' }, { value: 'draft', label: '草稿' }] }));
+    g2.appendChild(field('观看量', it, 'views', { type: 'number' }));
+    c.appendChild(g2);
+    c.appendChild(field('时长', it, 'duration', { placeholder: '00:01:20' }));
+    hint(c, '详情描述支持富文本与插图（用于落地页介绍）。');
+    c.appendChild(richEditor(it, 'description'));
+    const saveBtn = document.createElement('button'); saveBtn.className = 'btn'; saveBtn.textContent = '保存全部修改'; saveBtn.addEventListener('click', save);
+    c.appendChild(saveBtn); sec.appendChild(c);
+  }
+
+  // ============ 推广 / AI / 大数据 / 物流 ============
+  function renderPromo() {
+    const sec = $('#secPromo'); sec.innerHTML = '';
+    data.modules = data.modules || {}; data.modules.promo = data.modules.promo || {};
+    const p = data.modules.promo;
+    const c = card('推广与获客');
+    hint(c, '沉淀推广话术、投放备注与站内 SEO 提示。外部广告平台请在对应后台操作。');
+    c.appendChild(field('模块标题', p, 'title'));
+    c.appendChild(richEditor(p, 'html'));
+    c.appendChild(field('SEO / 投放备注', p, 'seoTips', { textarea: true, rows: 4 }));
+    sec.appendChild(c);
+  }
+  function renderAi() {
+    const sec = $('#secAi'); sec.innerHTML = '';
+    data.settings = data.settings || {}; data.settings.aiChat = data.settings.aiChat || {};
+    const ai = data.settings.aiChat;
+    const cai = card('AI 智能中心 · 前台客服');
+    hint(cai, '关闭时只用「商机中心 → 在线客服话术」的关键词回复。开启后：先关键词，未命中再调大模型。');
+    cai.appendChild(field('启用 AI', ai, 'enabled', { select: true, options: [{ value: 'false', label: '关闭（仅固定话术）' }, { value: 'true', label: '开启' }], onInput: (v) => { ai.enabled = v === 'true'; } }));
+    const aig = document.createElement('div'); aig.className = 'grid2';
+    aig.appendChild(field('API 地址', ai, 'apiUrl', { placeholder: 'https://api.openai.com/v1' }));
+    aig.appendChild(field('模型', ai, 'model', { placeholder: 'gpt-4o-mini' }));
+    cai.appendChild(aig);
+    cai.appendChild(field('API Key', ai, 'apiKey', { type: 'password', placeholder: 'sk-...' }));
+    cai.appendChild(field('系统提示词', ai, 'systemPrompt', { textarea: true, rows: 4 }));
+    const jump = document.createElement('button'); jump.type = 'button'; jump.className = 'btn ghost'; jump.textContent = '去编辑关键词话术';
+    jump.addEventListener('click', () => switchSection('chat'));
+    cai.appendChild(jump); sec.appendChild(cai);
+  }
+  function renderBigdata() {
+    const sec = $('#secBigdata'); sec.innerHTML = '';
+    const c = card('行业数据分析（站内）');
+    hint(c, '输入行业词，基于本站产品库与询盘数据做本地分析（非第三方付费大数据）。可用于选品与内容选题。');
+    const bar = document.createElement('div'); bar.className = 'ptoolbar';
+    const inp = document.createElement('input'); inp.className = 'inp grow'; inp.placeholder = '请输入行业词，如 grooving machine';
+    const btn = document.createElement('button'); btn.className = 'btn'; btn.type = 'button'; btn.textContent = '查询';
+    const out = document.createElement('div'); out.style.marginTop = '0.8rem';
+    const run = () => {
+      const q = inp.value.trim().toLowerCase();
+      if (!q) { out.innerHTML = '<div class="pt-sub">请输入关键词后查询</div>'; return; }
+      const products = ((L().products) || []).filter((p) => !p.deleted);
+      const hit = products.filter((p) => [p.name, p.subtitle, p.cardDesc, (p.cardTags || []).join(' '), p.slug].join(' ').toLowerCase().indexOf(q) > -1);
+      const leads = (leadsCache || []).filter((l) => ((l.product || '') + ' ' + (l.message || '') + ' ' + (l.title || '')).toLowerCase().indexOf(q) > -1);
+      out.innerHTML =
+        '<div class="stat-grid">' +
+        '<div class="stat"><div class="n">' + hit.length + '</div><div class="l">站内相关产品</div></div>' +
+        '<div class="stat"><div class="n">' + leads.length + '</div><div class="l">相关商机</div></div>' +
+        '</div>' +
+        '<div class="card" style="padding:0.9rem;margin-top:0.6rem"><div class="lbl">匹配产品</div>' +
+        (hit.length ? hit.slice(0, 12).map((p) => '<div style="padding:0.35rem 0;border-bottom:1px solid var(--border)"><b>' + esc(p.name) + '</b> <span class="pt-sub">/' + esc(p.slug || '') + '</span></div>').join('') : '<div class="pt-sub">无匹配产品，可考虑在产品描述中补充该词</div>') +
+        '</div>';
+    };
+    btn.addEventListener('click', run);
+    inp.addEventListener('keydown', (e) => { if (e.key === 'Enter') run(); });
+    // 推荐词
+    const tips = document.createElement('div'); tips.className = 'pt-sub'; tips.style.margin = '0.5rem 0';
+    const suggest = ['v groove machine', 'grooving machine', 'pneumatic', 'cnc', 'rigid box'];
+    tips.innerHTML = '推荐关键词：' + suggest.map((s) => '<a href="#" data-q="' + esc(s) + '" style="margin-right:0.6rem">' + esc(s) + '</a>').join('');
+    tips.querySelectorAll('a').forEach((a) => a.addEventListener('click', (e) => { e.preventDefault(); inp.value = a.dataset.q; run(); }));
+    bar.appendChild(inp); bar.appendChild(btn); c.appendChild(bar); c.appendChild(tips); c.appendChild(out);
+    sec.appendChild(c);
+    loadLeads(true).then(run).catch(run);
+  }
+  function renderLogistics() {
+    const sec = $('#secLogistics'); sec.innerHTML = '';
+    data.modules = data.modules || {}; data.modules.logistics = data.modules.logistics || {};
+    const Lgs = data.modules.logistics;
+    const c = card('物流服务说明');
+    hint(c, '维护发货、港口、包装等对外说明（富文本）。可同步给业务员话术使用。');
+    c.appendChild(field('标题', Lgs, 'title'));
+    c.appendChild(richEditor(Lgs, 'html'));
+    sec.appendChild(c);
+  }
+
+  const RENDERERS = {
+    dashboard: renderDashboard, brand: renderBrand, hero: renderHero, wizard: renderWizard, products: renderProducts,
+    company: renderCompany, decorate: renderDecorate, siteset: renderSiteset, contact: renderContact,
+    chat: renderChat, chats: renderChats, inbox: renderInbox,
+    videos: renderVideos, videogroups: renderVideogroups, videoanalytics: renderVideoanalytics,
+    promo: renderPromo, ai: renderAi, bigdata: renderBigdata, logistics: renderLogistics,
+    media: renderMedia, tools: renderTools, accounts: renderAccounts, account: renderAccount,
+  };
   function renderSection(sec) { if (RENDERERS[sec]) RENDERERS[sec](); }
 
   function renderLangTabs() {
     const host = $('#langTabs'); host.innerHTML = '';
+    const tip = document.createElement('span'); tip.className = 'save-hint'; tip.style.marginRight = '0.4rem';
+    const cur = (data.langs || []).find((l) => l.code === lang);
+    tip.textContent = '当前编辑：' + ((cur && cur.label) || lang || '');
+    host.appendChild(tip);
     (data.langs || []).forEach((lg) => {
       const b = document.createElement('button'); b.className = 'lang-tab' + (lg.code === lang ? ' active' : ''); b.textContent = lg.label || lg.code;
       b.addEventListener('click', () => { lang = lg.code; editIdx = null; renderLangTabs(); updatePreview(); renderSection(currentSec); });
@@ -1468,10 +1869,18 @@
     $('#secTitle').textContent = SEC_TITLES[sec] || '';
     if (sec === 'products') editIdx = null;
     if (sec === 'accounts') acctEditing = null;
-    // 商机中心用宽内容区，离开时还原，避免其它页被拉太宽
+    if (sec !== 'videos') videoEditId = null;
+    // 商机中心 / 视频列表用宽内容区
     const contentWrap = $('#appView .content');
-    if (contentWrap) contentWrap.classList.toggle('wide', sec === 'inbox');
-    $('#langTabs').style.display = ['dashboard', 'inbox', 'chats', 'media', 'accounts', 'account'].indexOf(sec) > -1 ? 'none' : '';
+    if (contentWrap) contentWrap.classList.toggle('wide', sec === 'inbox' || sec === 'videos');
+    const noLang = ['dashboard', 'inbox', 'chats', 'media', 'accounts', 'account', 'videos', 'videogroups', 'videoanalytics', 'promo', 'ai', 'bigdata', 'logistics', 'decorate', 'siteset'];
+    $('#langTabs').style.display = noLang.indexOf(sec) > -1 ? 'none' : '';
+    // 打开对应分组
+    const activeItem = $$('.menu-item').find((m) => m.dataset.sec === sec);
+    if (activeItem) {
+      const g = activeItem.closest('.menu-group');
+      if (g) g.classList.add('open');
+    }
     updatePreview();
     renderSection(sec);
   }
@@ -1498,21 +1907,33 @@
   function showApp() { $('#loginView').classList.add('hidden'); $('#appView').classList.remove('hidden'); }
   function allowedSecs() {
     if (!me || me.role === 'admin') return null; // 全部
-    if (me.role === 'editor') return ['dashboard', 'brand', 'hero', 'wizard', 'products', 'contact', 'chat', 'media', 'tools', 'account']; // 制作员：看不到询盘/聊天记录
-    return ['dashboard', 'products', 'inbox', 'chats', 'media', 'account']; // 业务员：含自己的询盘 + 聊天记录
+    if (me.role === 'editor') {
+      return ['dashboard', 'brand', 'hero', 'wizard', 'products', 'company', 'decorate', 'siteset', 'contact', 'chat', 'media', 'tools', 'videos', 'videogroups', 'videoanalytics', 'promo', 'ai', 'logistics', 'account'];
+    }
+    // 业务员
+    return ['dashboard', 'products', 'inbox', 'chats', 'media', 'account', 'bigdata', 'videos', 'videogroups', 'videoanalytics'];
   }
   function updateMenusForRole() {
     const allow = allowedSecs();
-    $$('.menu-item').forEach((m) => { m.style.display = (!allow || allow.indexOf(m.dataset.sec) > -1) ? '' : 'none'; });
+    $$('.menu-item').forEach((m) => {
+      if (!m.dataset.sec) return;
+      m.style.display = (!allow || allow.indexOf(m.dataset.sec) > -1) ? '' : 'none';
+    });
+    $$('.menu-group').forEach((g) => {
+      const visibles = $$('.menu-item', g).filter((m) => m.style.display !== 'none');
+      g.classList.toggle('hidden-by-role', !!allow && !visibles.length);
+    });
   }
 
   async function loadContent() {
     const res = await fetch('/api/admin/content'); data = await res.json();
     if (!data || typeof data !== 'object') data = {};
-    data.langs = data.langs || [{ code: 'zh', label: '中文', dir: 'ltr' }];
+    data.langs = data.langs || [{ code: 'en', label: 'English', dir: 'ltr' }];
     data.settings = data.settings || {};
-    lang = data.defaultLang || (data.langs[0] && data.langs[0].code) || 'zh';
-    leadsCache = null; uploadsCache = null; usersCache = null;
+    data.videos = data.videos || { groups: [{ id: 'g_default', name: 'Default' }], items: [] };
+    data.modules = data.modules || {};
+    lang = data.defaultLang || (data.langs[0] && data.langs[0].code) || 'en';
+    leadsCache = null; uploadsCache = null; usersCache = null; videoEditId = null;
     await loadUsers(true).catch(() => {});
     updateMenusForRole();
     renderLangTabs(); switchSection('dashboard'); markClean();
@@ -1520,7 +1941,10 @@
   }
 
   function bindGlobal() {
-    $$('.menu-item').forEach((m) => m.addEventListener('click', () => switchSection(m.dataset.sec)));
+    $$('.menu-item').forEach((m) => m.addEventListener('click', () => { if (m.dataset.sec) switchSection(m.dataset.sec); }));
+    $$('.menu-group-title').forEach((t) => t.addEventListener('click', () => {
+      const g = t.closest('.menu-group'); if (g) g.classList.toggle('open');
+    }));
     $('#saveBtn').addEventListener('click', save);
     $('#pickerClose').addEventListener('click', () => $('#picker').classList.add('hidden'));
     $('#picker').addEventListener('click', (e) => { if (e.target.id === 'picker') $('#picker').classList.add('hidden'); });

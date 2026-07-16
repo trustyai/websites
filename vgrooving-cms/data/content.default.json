@@ -3,16 +3,16 @@
   "brand": {
     "logo": "/assets/logo.png"
   },
-  "defaultLang": "zh",
+  "defaultLang": "en",
   "langs": [
-    {
-      "code": "zh",
-      "label": "中文",
-      "dir": "ltr"
-    },
     {
       "code": "en",
       "label": "English",
+      "dir": "ltr"
+    },
+    {
+      "code": "zh",
+      "label": "中文",
       "dir": "ltr"
     },
     {
@@ -206,7 +206,8 @@
             "label": "安全防护装置"
           }
         ],
-        "resultTitle": "为您推荐以下设备"
+        "resultTitle": "为您推荐以下设备",
+        "locks": []
       },
       "productsSection": {
         "tag": "全系列产品",
@@ -1280,26 +1281,69 @@
         ],
         "replies": [
           {
-            "keywords": ["价格", "报价", "多少钱", "price"],
+            "keywords": [
+              "价格",
+              "报价",
+              "多少钱",
+              "price"
+            ],
             "text": "各型号参考价可在产品详情页查看（如气动机约 ¥28,000 起）。具体配置需按材料/产量评估，您方便留个邮箱或微信吗？我们发正式报价单。"
           },
           {
-            "keywords": ["气动", "pneumatic"],
+            "keywords": [
+              "气动",
+              "pneumatic"
+            ],
             "text": "气动 V 槽成型机适合中小型企业日常生产，气动驱动稳定，带 6 档深度预设。详情页：/products/pneumatic 。也可直接说下材料厚度和日产量，我帮您判断是否合适。"
           },
           {
-            "keywords": ["手动", "打样", "manual"],
+            "keywords": [
+              "手动",
+              "打样",
+              "manual"
+            ],
             "text": "手动 V 槽打样机轻便灵活，适合设计工作室和小批量多款式。参考价约 ¥8,800 起。详情：/products/manual"
           },
           {
-            "keywords": ["选型", "推荐", "哪个好", "怎么选"],
+            "keywords": [
+              "选型",
+              "推荐",
+              "哪个好",
+              "怎么选"
+            ],
             "text": "选型一般看三点：材料厚度、日产量、是否要自动化。薄材小批量→手动；中等批量→气动；大批量高精度→CNC/自动线。您目前加工什么材料、一天大概多少件？"
           },
           {
-            "keywords": ["质保", "售后", "保修", "安装", "技术支持"],
+            "keywords": [
+              "质保",
+              "售后",
+              "保修",
+              "安装",
+              "技术支持"
+            ],
             "text": "设备支持质保与售后响应，部分机型含安装调试。留下联系方式后，业务同事会按您所在地区说明联保与上门政策。"
           }
         ]
+      },
+      "company": {
+        "profileTitle": "Company Profile",
+        "profileHtml": "",
+        "factoryTitle": "Factory",
+        "factoryHtml": "",
+        "contactTitle": "Contact",
+        "contactHtml": "",
+        "certTitle": "Certifications",
+        "certHtml": "",
+        "testimonialTitle": "Testimonials",
+        "testimonialHtml": "",
+        "newsTitle": "News",
+        "newsHtml": "",
+        "casesTitle": "Cases",
+        "casesHtml": "",
+        "blogTitle": "Blog",
+        "blogHtml": "",
+        "privacyTitle": "Privacy Policy",
+        "privacyHtml": ""
       }
     },
     "en": {
@@ -1471,7 +1515,8 @@
             "label": "Safety Guard"
           }
         ],
-        "resultTitle": "Recommended Equipment"
+        "resultTitle": "Recommended Equipment",
+        "locks": []
       },
       "productsSection": {
         "tag": "Full Product Line",
@@ -2465,6 +2510,26 @@
           "Selection Advice",
           "Tech Support"
         ]
+      },
+      "company": {
+        "profileTitle": "Company Profile",
+        "profileHtml": "",
+        "factoryTitle": "Factory",
+        "factoryHtml": "",
+        "contactTitle": "Contact",
+        "contactHtml": "",
+        "certTitle": "Certifications",
+        "certHtml": "",
+        "testimonialTitle": "Testimonials",
+        "testimonialHtml": "",
+        "newsTitle": "News",
+        "newsHtml": "",
+        "casesTitle": "Cases",
+        "casesHtml": "",
+        "blogTitle": "Blog",
+        "blogHtml": "",
+        "privacyTitle": "Privacy Policy",
+        "privacyHtml": ""
       }
     },
     "es": {
@@ -2636,7 +2701,8 @@
             "label": "Protección Seguridad"
           }
         ],
-        "resultTitle": "Equipos Recomendados"
+        "resultTitle": "Equipos Recomendados",
+        "locks": []
       },
       "productsSection": {
         "tag": "Línea Completa",
@@ -3695,6 +3761,26 @@
           "Selección",
           "Soporte Técnico"
         ]
+      },
+      "company": {
+        "profileTitle": "Company Profile",
+        "profileHtml": "",
+        "factoryTitle": "Factory",
+        "factoryHtml": "",
+        "contactTitle": "Contact",
+        "contactHtml": "",
+        "certTitle": "Certifications",
+        "certHtml": "",
+        "testimonialTitle": "Testimonials",
+        "testimonialHtml": "",
+        "newsTitle": "News",
+        "newsHtml": "",
+        "casesTitle": "Cases",
+        "casesHtml": "",
+        "blogTitle": "Blog",
+        "blogHtml": "",
+        "privacyTitle": "Privacy Policy",
+        "privacyHtml": ""
       }
     },
     "ko": {
@@ -3866,7 +3952,8 @@
             "label": "안전 가드"
           }
         ],
-        "resultTitle": "추천 장비"
+        "resultTitle": "추천 장비",
+        "locks": []
       },
       "productsSection": {
         "tag": "전체 제품 라인",
@@ -4741,6 +4828,26 @@
           "모델 선택",
           "기술 지원"
         ]
+      },
+      "company": {
+        "profileTitle": "Company Profile",
+        "profileHtml": "",
+        "factoryTitle": "Factory",
+        "factoryHtml": "",
+        "contactTitle": "Contact",
+        "contactHtml": "",
+        "certTitle": "Certifications",
+        "certHtml": "",
+        "testimonialTitle": "Testimonials",
+        "testimonialHtml": "",
+        "newsTitle": "News",
+        "newsHtml": "",
+        "casesTitle": "Cases",
+        "casesHtml": "",
+        "blogTitle": "Blog",
+        "blogHtml": "",
+        "privacyTitle": "Privacy Policy",
+        "privacyHtml": ""
       }
     },
     "ar": {
@@ -4912,7 +5019,8 @@
             "label": "واقي أمان"
           }
         ],
-        "resultTitle": "المعدات الموصى بها"
+        "resultTitle": "المعدات الموصى بها",
+        "locks": []
       },
       "productsSection": {
         "tag": "خط المنتجات الكامل",
@@ -5980,6 +6088,26 @@
           "اختيار الموديل",
           "دعم فني"
         ]
+      },
+      "company": {
+        "profileTitle": "Company Profile",
+        "profileHtml": "",
+        "factoryTitle": "Factory",
+        "factoryHtml": "",
+        "contactTitle": "Contact",
+        "contactHtml": "",
+        "certTitle": "Certifications",
+        "certHtml": "",
+        "testimonialTitle": "Testimonials",
+        "testimonialHtml": "",
+        "newsTitle": "News",
+        "newsHtml": "",
+        "casesTitle": "Cases",
+        "casesHtml": "",
+        "blogTitle": "Blog",
+        "blogHtml": "",
+        "privacyTitle": "Privacy Policy",
+        "privacyHtml": ""
       }
     },
     "tr": {
@@ -6151,7 +6279,8 @@
             "label": "Güvenlik Koruması"
           }
         ],
-        "resultTitle": "Tavsiye Edilen Ekipmanlar"
+        "resultTitle": "Tavsiye Edilen Ekipmanlar",
+        "locks": []
       },
       "productsSection": {
         "tag": "Tam Ürün Hattı",
@@ -7219,7 +7348,51 @@
           "Seçim",
           "Destek"
         ]
+      },
+      "company": {
+        "profileTitle": "Company Profile",
+        "profileHtml": "",
+        "factoryTitle": "Factory",
+        "factoryHtml": "",
+        "contactTitle": "Contact",
+        "contactHtml": "",
+        "certTitle": "Certifications",
+        "certHtml": "",
+        "testimonialTitle": "Testimonials",
+        "testimonialHtml": "",
+        "newsTitle": "News",
+        "newsHtml": "",
+        "casesTitle": "Cases",
+        "casesHtml": "",
+        "blogTitle": "Blog",
+        "blogHtml": "",
+        "privacyTitle": "Privacy Policy",
+        "privacyHtml": ""
       }
+    }
+  },
+  "videos": {
+    "groups": [
+      {
+        "id": "g_default",
+        "name": "Default"
+      }
+    ],
+    "items": []
+  },
+  "modules": {
+    "promo": {
+      "title": "Promotion",
+      "html": "",
+      "seoTips": ""
+    },
+    "logistics": {
+      "title": "Logistics",
+      "html": ""
+    },
+    "decorate": {
+      "primaryColor": "",
+      "note": ""
     }
   }
 }
