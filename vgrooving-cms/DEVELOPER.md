@@ -190,6 +190,9 @@ vgrooving-cms/
 ## 8. 前台关键逻辑
 
 - `public/common.js`：语言路由、导航、搜索、客服 UI、**聊天上报**
+- 客服打开：`openChat`；点外部关闭在打开后的下一事件循环才绑定，避免 CTA「获取实时报价」同一次点击立刻关闭
+- 产品次按钮「下载参数表」：优先 `product.downloadUrl`，否则根据参数生成 `.txt` 下载
+- 静态资源带 `?v=` 缓存戳（改前端后记得同步 bump HTML 里的版本号）
 - 客服关键词与话术：各语言 `i18n.<lang>.chat`（后台「在线客服」编辑）
 - 联系表单：`contact.js` → `POST /api/leads`
 

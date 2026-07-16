@@ -82,7 +82,7 @@
     const links = ((L.nav && L.nav.links) || [])
       .map((l) => {
         if (/在线|inquiry|consulta|문의|استفسار|danışma|online/i.test(l.label) && (l.href === '#' || !l.href)) {
-          return '<li><a href="#" onclick="openChat(event);return false;">' + esc(l.label) + '</a></li>';
+          return '<li><a href="#" data-open-chat="1">' + esc(l.label) + '</a></li>';
         }
         return '<li><a href="' + esc(anchorHref(VG.lang, l.href, isHome)) + '">' + esc(l.label) + '</a></li>';
       })
@@ -102,9 +102,14 @@
     nav.innerHTML =
       logo +
       '<ul class="nav-links">' + links + '</ul>' +
-      '<button class="nav-search" title="搜索" onclick="VGsearchOpen()">🔍</button>' +
-      '<button class="nav-btn" onclick="openChat(event)">' + esc(cta) + '</button>' +
+      '<button class="nav-search" title="搜索" type="button">🔍</button>' +
+      '<button class="nav-btn" type="button" data-open-chat="1">' + esc(cta) + '</button>' +
       '<div class="lang-switcher"><select onchange="location.href=this.value">' + opts + '</select></div>';
+    const searchBtn = nav.querySelector('.nav-search');
+    if (searchBtn) searchBtn.addEventListener('click', function () { global.VGsearchOpen(); });
+    nav.querySelectorAll('[data-open-chat]').forEach(function (el) {
+      el.addEventListener('click', function (ev) { global.openChat(ev); });
+    });
   }
 
   // ---------- 前台搜索 ----------
@@ -201,22 +206,51 @@
     const hit = (chat.replies || []).find((r) => (r.keywords || []).some((k) => t.indexOf(String(k).toLowerCase()) > -1));
     return hit ? hit.text : (chat.fallback || chat.greeting || '');
   }
-  // 打开客服后，忽略同一次 click 冒泡到 document 的“点外部关闭”，否则产品页「获取实时报价」等按钮会瞬间开关无响应
-  let ignoreChatOutsideClose = false;
+  // 客服开关：点外部关闭必须延后绑定，否则「获取实时报价」等同一次 click 会立刻把窗口关掉
+  let outsideCloseHandler = null;
+  function closeChat() {
+    const win = document.getElementById('chatWindow');
+    const fab = document.getElementById('chatFab');
+    if (win) win.classList.remove('open');
+    if (fab) { fab.textContent = '💬'; fab.style.background = ''; }
+    if (outsideCloseHandler) {
+      document.removeEventListener('click', outsideCloseHandler, true);
+      outsideCloseHandler = null;
+    }
+  }
+  function bindOutsideClose() {
+    if (outsideCloseHandler) {
+      document.removeEventListener('click', outsideCloseHandler, true);
+      outsideCloseHandler = null;
+    }
+    outsideCloseHandler = function (e) {
+      const win = document.getElementById('chatWindow');
+      const fab = document.getElementById('chatFab');
+      if (!win || !fab || !win.classList.contains('open')) return;
+      if (win.contains(e.target) || fab.contains(e.target)) return;
+      if (e.target && e.target.closest && e.target.closest('[data-open-chat]')) return;
+      closeChat();
+    };
+    setTimeout(function () {
+      if (outsideCloseHandler) document.addEventListener('click', outsideCloseHandler, true);
+    }, 0);
+  }
+  global.closeChat = closeChat;
   global.openChat = function (e) {
-    if (e && e.stopPropagation) e.stopPropagation();
     if (e && e.preventDefault) e.preventDefault();
+    if (e && e.stopPropagation) e.stopPropagation();
     const win = document.getElementById('chatWindow');
     const fab = document.getElementById('chatFab');
     if (!win || !fab) return;
-    win.classList.toggle('open');
-    if (win.classList.contains('open')) {
-      ignoreChatOutsideClose = true;
-      setTimeout(function () { ignoreChatOutsideClose = false; }, 0);
-      fab.textContent = '🛑'; fab.style.background = '#E60012';
-      getChatSessionId();
-      setTimeout(() => { const i = document.getElementById('cInp'); if (i) i.focus(); }, 200);
-    } else { fab.textContent = '💬'; fab.style.background = ''; }
+    const isOpen = win.classList.contains('open');
+    const fromFab = !!(e && e.target && fab.contains(e.target));
+    if (isOpen && fromFab) { closeChat(); return; }
+    if (isOpen) return; // CTA 等：已打开则保持
+    win.classList.add('open');
+    fab.textContent = '🛑'; fab.style.background = '#E60012';
+    getChatSessionId();
+    bindOutsideClose();
+    setTimeout(function () { const i = document.getElementById('cInp'); if (i) i.focus(); }, 200);
   };
   global.cSend = function () {
     const inp = document.getElementById('cInp');
@@ -272,14 +306,21 @@
       document.querySelectorAll('.fade-up').forEach((el) => obs.observe(el));
     } else document.querySelectorAll('.fade-up').forEach((el) => el.classList.add('in'));
     const inp = document.getElementById('cInp');
-    if (inp) inp.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); global.cSend(); } });
-    document.addEventListener('click', (e) => {
-      if (ignoreChatOutsideClose) return;
-      const win = document.getElementById('chatWindow'); const fab = document.getElementById('chatFab');
-      if (win && fab && win.classList.contains('open') && !win.contains(e.target) && !fab.contains(e.target)) { win.classList.remove('open'); fab.textContent = '💬'; fab.style.background = ''; }
-    });
+    if (inp && !inp.dataset.vgBound) {
+      inp.dataset.vgBound = '1';
+      inp.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); global.cSend(); } });
+    }
+    const fab = document.getElementById('chatFab');
+    if (fab && !fab.dataset.vgBound) {
+      fab.dataset.vgBound = '1';
+      fab.removeAttribute('onclick');
+      fab.addEventListener('click', function (ev) { global.openChat(ev); });
+    }
     const nav = document.querySelector('nav');
-    if (nav) window.addEventListener('scroll', () => { nav.style.boxShadow = window.scrollY > 80 ? '0 2px 20px rgba(0,0,0,0.15)' : ''; }, { passive: true });
+    if (nav && !nav.dataset.vgScroll) {
+      nav.dataset.vgScroll = '1';
+      window.addEventListener('scroll', () => { nav.style.boxShadow = window.scrollY > 80 ? '0 2px 20px rgba(0,0,0,0.15)' : ''; }, { passive: true });
+    }
   }
 
   // 载入内容后设置当前语言

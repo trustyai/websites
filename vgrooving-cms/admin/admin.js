@@ -537,7 +537,10 @@
     cp.appendChild(csvField('付款方式（逗号分隔）', p.trade, 'payments', { placeholder: 'L/C, T/T, D/P, Western Union' }));
     const g4 = document.createElement('div'); g4.className = 'grid2';
     g4.appendChild(field('主按钮文字', p, 'ctaPrimary')); g4.appendChild(field('次按钮文字', p, 'ctaSecondary'));
-    cp.appendChild(g4); sec.appendChild(cp);
+    cp.appendChild(g4);
+    hint(cp, '主按钮打开在线客服；次按钮优先下载下方「参数表文件」地址，未填则自动生成产品参数 txt。');
+    cp.appendChild(field('参数表文件 URL（可选）', p, 'downloadUrl', { placeholder: '/uploads/xxx.pdf 或 https://...' }));
+    sec.appendChild(cp);
 
     // 交付与信任
     const cd = card('交付标签与信任徽章');

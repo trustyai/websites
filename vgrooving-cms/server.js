@@ -723,12 +723,21 @@ function buildSeo(req, type, langParam, slug) {
   tags += '<meta name="twitter:card" content="' + (absImg ? 'summary_large_image' : 'summary') + '">\n';
   return { tags, lang: lang === 'zh' ? 'zh-CN' : lang, dir: dirMeta };
 }
-const shellCache = {};
+const shellCache = {}; // file -> { mtime, html }，文件变更后自动重读，避免更新静态页后仍吐旧 HTML
+function readShell(file) {
+  const fp = path.join(PUBLIC_DIR, file);
+  const mtime = fs.statSync(fp).mtimeMs;
+  const cached = shellCache[file];
+  if (cached && cached.mtime === mtime) return cached.html;
+  const html = fs.readFileSync(fp, 'utf8');
+  shellCache[file] = { mtime, html };
+  return html;
+}
 function renderShell(file, req, res, type, slug) {
   const content = readJson(CONTENT_FILE, {});
   const seo = buildSeo(req, type, req.params.lang, slug);
   const headHtml = (content.settings && content.settings.headHtml) || '';
-  let html = shellCache[file] || (shellCache[file] = fs.readFileSync(path.join(PUBLIC_DIR, file), 'utf8'));
+  let html = readShell(file);
   html = html.replace(/<html[^>]*>/, '<html lang="' + seo.lang + '" dir="' + seo.dir + '">');
   html = html.replace(/<title>[\s\S]*?<\/title>/, seo.tags + (headHtml ? '\n' + headHtml + '\n' : ''));
   recordView(type, slug || '', req.params.lang || (content.defaultLang || 'zh'));

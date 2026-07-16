@@ -35,12 +35,16 @@
       '<div class="need-header" style="margin-bottom:3rem"><div class="tag">' + esc(c.tag || '') + '</div><h2>' + esc(c.title || '') + '</h2><p style="color:var(--gray-500);max-width:600px;margin:0 auto">' + esc(c.subtitle || '') + '</p></div>' +
       (methods ? '<div class="contact-methods-grid">' + methods + '</div>' : '') +
       (distributors ? '<div class="dist-section"><div class="spec-title" style="font-size:1.2rem;margin-bottom:1.5rem">' + esc(c.distributorsTitle || '') + '</div><div class="dist-grid">' + distributors + '</div></div>' : '') +
-      (c.agent && c.agent.title ? '<div class="agent-box"><div style="font-size:1.5rem;margin-bottom:0.5rem">🤝</div><h3>' + esc(c.agent.title) + '</h3><p>' + esc(c.agent.desc || '') + '</p><div class="agent-btns"><button class="cta-primary" type="button" onclick="openChat(event)">' + esc(c.agent.primaryBtn || '') + '</button><button class="cta-secondary" type="button" onclick="location.href=\'' + home + '\'">' + esc(c.agent.secondaryBtn || '') + '</button></div></div>' : '') +
+      (c.agent && c.agent.title ? '<div class="agent-box"><div style="font-size:1.5rem;margin-bottom:0.5rem">🤝</div><h3>' + esc(c.agent.title) + '</h3><p>' + esc(c.agent.desc || '') + '</p><div class="agent-btns"><button class="cta-primary" type="button" id="agentChatBtn" data-open-chat="1">' + esc(c.agent.primaryBtn || '') + '</button><button class="cta-secondary" type="button" id="agentHomeBtn">' + esc(c.agent.secondaryBtn || '') + '</button></div></div>' : '') +
       '<div class="inquiry-form"><div class="spec-title" style="font-size:1.2rem;margin-bottom:1.5rem">' + esc(c.formTitle || '') + '</div>' + formInputs +
-      '<button class="cta-primary" id="leadSubmit" style="max-width:320px;width:100%">' + esc(c.submitText || '') + '</button></div>';
+      '<button class="cta-primary" id="leadSubmit" type="button" style="max-width:320px;width:100%">' + esc(c.submitText || '') + '</button></div>';
 
     const btn = document.getElementById('leadSubmit');
     if (btn) btn.addEventListener('click', submitLead);
+    const chatBtn = document.getElementById('agentChatBtn');
+    if (chatBtn) chatBtn.addEventListener('click', function (ev) { window.openChat(ev); });
+    const homeBtn = document.getElementById('agentHomeBtn');
+    if (homeBtn) homeBtn.addEventListener('click', function () { location.href = home; });
   });
 
   async function submitLead() {

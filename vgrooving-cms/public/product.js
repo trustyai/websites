@@ -14,16 +14,23 @@
       ? '<video src="' + esc(it.src) + '" muted loop controls></video>'
       : '<img src="' + esc(it.src) + '" alt="' + esc(it.alt || '') + '">';
     main.innerHTML = '<div class="inner-content" style="width:100%;height:100%">' + media + '</div>' +
-      (gal.items.length > 1 ? '<button class="gallery-btn prev" onclick="event.stopPropagation();window.__g(-1)">‹</button><button class="gallery-btn next" onclick="event.stopPropagation();window.__g(1)">›</button>' : '') +
+      (gal.items.length > 1 ? '<button class="gallery-btn prev" type="button">‹</button><button class="gallery-btn next" type="button">›</button>' : '') +
       '<div class="gallery-counter">' + (gal.current + 1) + ' / ' + gal.items.length + '</div>';
     main.onclick = openLightbox;
-    thumbs.innerHTML = gal.items.map((x, i) => {
-      const cls = i === gal.current ? 'g-thumb active' : 'g-thumb';
-      const inner = x.type === 'video'
+    const prev = main.querySelector('.gallery-btn.prev');
+    const next = main.querySelector('.gallery-btn.next');
+    if (prev) prev.addEventListener('click', function (e) { e.stopPropagation(); window.__g(-1); });
+    if (next) next.addEventListener('click', function (e) { e.stopPropagation(); window.__g(1); });
+    thumbs.innerHTML = '';
+    gal.items.forEach(function (x, i) {
+      const el = document.createElement('div');
+      el.className = i === gal.current ? 'g-thumb active' : 'g-thumb';
+      el.innerHTML = x.type === 'video'
         ? '<video src="' + esc(x.src) + '" muted></video><span class="g-thumb-type">VIDEO</span>'
         : '<img src="' + esc(x.src) + '" alt="">';
-      return '<div class="' + cls + '" onclick="window.__gg(' + i + ')">' + inner + '</div>';
-    }).join('');
+      el.addEventListener('click', function () { window.__gg(i); });
+      thumbs.appendChild(el);
+    });
   }
   window.__g = (d) => { gal.current = (gal.current + d + gal.items.length) % gal.items.length; renderGallery(); };
   window.__gg = (i) => { gal.current = i; renderGallery(); };
@@ -36,8 +43,19 @@
     const lb = document.getElementById('lightbox');
     const m = gal.items[gal.current];
     const media = m.type === 'video' ? '<video src="' + esc(m.src) + '" controls autoplay></video>' : '<img src="' + esc(m.src) + '" alt="">';
-    const nav = gal.items.length > 1 ? '<button class="lightbox-close" style="left:20px;right:auto;top:50%;transform:translateY(-50%)" onclick="event.stopPropagation();window.__lb(-1)">‹</button><button class="lightbox-close" style="right:20px;top:50%;transform:translateY(-50%)" onclick="event.stopPropagation();window.__lb(1)">›</button>' : '';
-    lb.innerHTML = '<button class="lightbox-close" onclick="window.__lbc()">✕</button>' + nav + media;
+    lb.innerHTML = '<button class="lightbox-close" type="button" data-lb="close">✕</button>' +
+      (gal.items.length > 1
+        ? '<button class="lightbox-close" type="button" data-lb="-1" style="left:20px;right:auto;top:50%;transform:translateY(-50%)">‹</button>' +
+          '<button class="lightbox-close" type="button" data-lb="1" style="right:20px;top:50%;transform:translateY(-50%)">›</button>'
+        : '') + media;
+    lb.querySelectorAll('[data-lb]').forEach(function (btn) {
+      btn.addEventListener('click', function (e) {
+        e.stopPropagation();
+        const v = btn.getAttribute('data-lb');
+        if (v === 'close') window.__lbc();
+        else window.__lb(Number(v));
+      });
+    });
   }
   window.__lb = (d) => { gal.current = (gal.current + d + gal.items.length) % gal.items.length; renderLightbox(); renderGallery(); };
   window.__lbc = () => document.getElementById('lightbox').classList.remove('open');
@@ -48,6 +66,58 @@
     if (e.key === 'ArrowLeft' && gal.items.length > 1) window.__lb(-1);
     if (e.key === 'ArrowRight' && gal.items.length > 1) window.__lb(1);
   });
+
+  /** 下载参数表：优先 downloadUrl；否则根据产品信息生成 txt */
+  function downloadSpecSheet(p) {
+    const url = (p.downloadUrl || p.datasheet || '').trim();
+    if (url) {
+      const a = document.createElement('a');
+      a.href = url;
+      a.target = '_blank';
+      a.rel = 'noopener';
+      if (!/^https?:\/\//i.test(url)) a.download = '';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      return;
+    }
+    const lines = [];
+    lines.push(p.name || 'Product');
+    if (p.subtitle) lines.push(p.subtitle);
+    lines.push('');
+    if (p.price && (p.price.main || p.price.usd)) {
+      lines.push((p.price.label || 'Price') + ': ' + [p.price.main, p.price.cny, p.price.usd].filter(Boolean).join(' '));
+      if (p.price.note) lines.push(p.price.note);
+      lines.push('');
+    }
+    const a = p.attrs || {};
+    [['Brand', a.brand], ['Model', a.model], ['Certification', a.cert], ['Origin', a.origin]].forEach(function (row) {
+      if (row[1]) lines.push(row[0] + ': ' + row[1]);
+    });
+    (p.customAttrs || []).forEach(function (x) { if (x.name) lines.push(x.name + ': ' + (x.value || '')); });
+    (p.specs || []).forEach(function (s) { if (s.k) lines.push(s.k + ': ' + (s.v || '')); });
+    const t = p.trade || {};
+    if (t.moq) lines.push('MOQ: ' + t.moq);
+    if (t.supplyAbility) lines.push('Supply: ' + t.supplyAbility);
+    if (t.deliveryTime) lines.push('Lead time: ' + t.deliveryTime);
+    if (t.packaging) lines.push('Packaging: ' + t.packaging);
+    if (t.payments && t.payments.length) lines.push('Payment: ' + t.payments.join(', '));
+    if (p.highlights && p.highlights.length) {
+      lines.push('');
+      lines.push(p.highlightsTitle || 'Highlights');
+      p.highlights.forEach(function (h) { lines.push('- ' + h); });
+    }
+    lines.push('');
+    lines.push('Page: ' + location.href);
+    const blob = new Blob(['\ufeff' + lines.join('\n')], { type: 'text/plain;charset=utf-8' });
+    const a2 = document.createElement('a');
+    a2.href = URL.createObjectURL(blob);
+    a2.download = (p.slug || p.id || 'spec') + '-specs.txt';
+    document.body.appendChild(a2);
+    a2.click();
+    a2.remove();
+    setTimeout(function () { URL.revokeObjectURL(a2.href); }, 1000);
+  }
 
   function renderInfo(p, L) {
     const price = p.price || {};
@@ -64,16 +134,37 @@
     const benefits = (p.benefits || []).map((b) => '<div class="benefit-item"><span class="benefit-icon">' + esc(b.icon) + '</span><span class="benefit-text">' + esc(b.text) + '</span></div>').join('');
     const highlights = (p.highlights && p.highlights.length)
       ? '<div class="featured-box"><h3>' + esc(p.highlightsTitle || '') + '</h3><ul>' + p.highlights.map((h) => '<li>' + esc(h) + '</li>').join('') + '</ul></div>' : '';
-    document.getElementById('pInfo').innerHTML =
+
+    const host = document.getElementById('pInfo');
+    host.innerHTML =
       (p.badge ? '<span class="product-badge ' + esc(p.badgeClass || '') + '">' + esc(p.badge) + '</span>' : '') +
       '<h1 class="product-title">' + esc(p.name) + '</h1>' +
       '<p class="product-subtitle">' + esc(p.subtitle || '') + '</p>' +
       priceHtml +
       (delivery ? '<div class="delivery-tags">' + delivery + '</div>' : '') +
-      '<div class="cta-group"><button class="cta-primary" type="button" onclick="openChat(event)">' + esc(p.ctaPrimary || '') + '</button><button class="cta-secondary" type="button" onclick="openChat(event)">' + esc(p.ctaSecondary || '') + '</button></div>' +
+      '<div class="cta-group" id="pCtaGroup"></div>' +
       (trust ? '<div class="trust-badges">' + trust + '</div>' : '') +
       (benefits ? '<div class="benefits-grid">' + benefits + '</div>' : '') +
       highlights;
+
+    const group = document.getElementById('pCtaGroup');
+    const btnPrimary = document.createElement('button');
+    btnPrimary.type = 'button';
+    btnPrimary.className = 'cta-primary';
+    btnPrimary.setAttribute('data-open-chat', '1');
+    btnPrimary.textContent = p.ctaPrimary || '获取报价';
+    btnPrimary.addEventListener('click', function (ev) { window.openChat(ev); });
+    const btnSecondary = document.createElement('button');
+    btnSecondary.type = 'button';
+    btnSecondary.className = 'cta-secondary';
+    btnSecondary.textContent = p.ctaSecondary || '下载参数表';
+    btnSecondary.addEventListener('click', function (ev) {
+      ev.preventDefault();
+      ev.stopPropagation();
+      downloadSpecSheet(p);
+    });
+    group.appendChild(btnPrimary);
+    group.appendChild(btnSecondary);
   }
 
   const LBL = {
@@ -144,5 +235,4 @@
     renderSpecs(p);
     renderRelated(p, L);
   });
-  function stripMarkup(s) { return String(s || '').replace(/[*]/g, ''); }
 })();
