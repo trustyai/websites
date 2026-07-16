@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>V槽开槽机 — 专业开槽设备制造商</title>
+<link rel="icon" href="/assets/logo.png">
+<link rel="stylesheet" href="/styles.css?v=20260716g">
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Noto+Sans+SC:wght@300;400;500;700&display=swap" rel="stylesheet">
+</head>
+<body>
+<nav id="siteNav"></nav>
+
+<div class="hero">
+  <div class="hero-background"></div>
+  <div class="hero-content" id="heroContent"></div>
+</div>
+
+<section id="need-section" class="need-section fade-up">
+  <div id="needSection"></div>
+</section>
+
+<section id="all-products" class="need-section fade-up">
+  <div class="need-header" id="prodHeader"></div>
+  <div class="result-products" id="allProducts"></div>
+</section>
+
+<footer id="siteFooter"></footer>
+
+<button class="chat-fab" id="chatFab" type="button">💬</button>
+<div class="chat-window" id="chatWindow">
+  <div class="chat-win-header">
+    <div class="cw-ava" id="cwAva"></div>
+    <div class="cw-info"><strong id="cwName"></strong><span id="cwStatus"></span></div>
+    <div class="cw-status"></div>
+  </div>
+  <div class="chat-msgs" id="chatMsgs"></div>
+  <div class="chat-quick-chips" id="chatChips"></div>
+  <div class="chat-input-row">
+    <textarea class="c-inp" id="cInp" placeholder="..." rows="1" oninput="this.style.height='auto';this.style.height=Math.min(this.scrollHeight,100)+'px'"></textarea>
+    <button class="c-send" type="button" onclick="cSend()">➤</button>
+  </div>
+</div>
+
+<script src="/common.js?v=20260716g"></script>
+<script src="/app.js?v=20260716g"></script>
+</body>
+</html>
