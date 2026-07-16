@@ -82,7 +82,7 @@
     const links = ((L.nav && L.nav.links) || [])
       .map((l) => {
         if (/在线|inquiry|consulta|문의|استفسار|danışma|online/i.test(l.label) && (l.href === '#' || !l.href)) {
-          return '<li><a href="#" onclick="openChat();return false;">' + esc(l.label) + '</a></li>';
+          return '<li><a href="#" onclick="openChat(event);return false;">' + esc(l.label) + '</a></li>';
         }
         return '<li><a href="' + esc(anchorHref(VG.lang, l.href, isHome)) + '">' + esc(l.label) + '</a></li>';
       })
@@ -103,7 +103,7 @@
       logo +
       '<ul class="nav-links">' + links + '</ul>' +
       '<button class="nav-search" title="搜索" onclick="VGsearchOpen()">🔍</button>' +
-      '<button class="nav-btn" onclick="openChat()">' + esc(cta) + '</button>' +
+      '<button class="nav-btn" onclick="openChat(event)">' + esc(cta) + '</button>' +
       '<div class="lang-switcher"><select onchange="location.href=this.value">' + opts + '</select></div>';
   }
 
@@ -201,12 +201,18 @@
     const hit = (chat.replies || []).find((r) => (r.keywords || []).some((k) => t.indexOf(String(k).toLowerCase()) > -1));
     return hit ? hit.text : (chat.fallback || chat.greeting || '');
   }
-  global.openChat = function () {
+  // 打开客服后，忽略同一次 click 冒泡到 document 的“点外部关闭”，否则产品页「获取实时报价」等按钮会瞬间开关无响应
+  let ignoreChatOutsideClose = false;
+  global.openChat = function (e) {
+    if (e && e.stopPropagation) e.stopPropagation();
+    if (e && e.preventDefault) e.preventDefault();
     const win = document.getElementById('chatWindow');
     const fab = document.getElementById('chatFab');
     if (!win || !fab) return;
     win.classList.toggle('open');
     if (win.classList.contains('open')) {
+      ignoreChatOutsideClose = true;
+      setTimeout(function () { ignoreChatOutsideClose = false; }, 0);
       fab.textContent = '🛑'; fab.style.background = '#E60012';
       getChatSessionId();
       setTimeout(() => { const i = document.getElementById('cInp'); if (i) i.focus(); }, 200);
@@ -268,6 +274,7 @@
     const inp = document.getElementById('cInp');
     if (inp) inp.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); global.cSend(); } });
     document.addEventListener('click', (e) => {
+      if (ignoreChatOutsideClose) return;
       const win = document.getElementById('chatWindow'); const fab = document.getElementById('chatFab');
       if (win && fab && win.classList.contains('open') && !win.contains(e.target) && !fab.contains(e.target)) { win.classList.remove('open'); fab.textContent = '💬'; fab.style.background = ''; }
     });

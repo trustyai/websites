@@ -70,7 +70,7 @@
       '<p class="product-subtitle">' + esc(p.subtitle || '') + '</p>' +
       priceHtml +
       (delivery ? '<div class="delivery-tags">' + delivery + '</div>' : '') +
-      '<div class="cta-group"><button class="cta-primary" onclick="openChat()">' + esc(p.ctaPrimary || '') + '</button><button class="cta-secondary" onclick="openChat()">' + esc(p.ctaSecondary || '') + '</button></div>' +
+      '<div class="cta-group"><button class="cta-primary" type="button" onclick="openChat(event)">' + esc(p.ctaPrimary || '') + '</button><button class="cta-secondary" type="button" onclick="openChat(event)">' + esc(p.ctaSecondary || '') + '</button></div>' +
       (trust ? '<div class="trust-badges">' + trust + '</div>' : '') +
       (benefits ? '<div class="benefits-grid">' + benefits + '</div>' : '') +
       highlights;

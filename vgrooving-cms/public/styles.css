@@ -150,7 +150,7 @@ nav .logo img{height:36px;width:auto}
 .dtag.green{color:#15803d;background:#f0fdf4;border-color:#bbf7d0}
 /* CTA */
 .cta-group{display:flex;gap:0.8rem;margin-bottom:1.5rem}
-.cta-primary{flex:1;background:linear-gradient(135deg,var(--primary),var(--primary-dark));color:#fff;padding:0.9rem 1.5rem;border-radius:var(--radius-md);font-size:1rem;font-weight:700;text-align:center;transition:var(--transition);box-shadow:0 4px 15px rgba(35,172,56,0.35)}
+.cta-primary{flex:1;background:linear-gradient(135deg,var(--primary),var(--primary-dark));color:#fff;padding:0.9rem 1.5rem;border-radius:var(--radius-md);font-size:1rem;font-weight:700;text-align:center;cursor:pointer;border:none;transition:var(--transition);box-shadow:0 4px 15px rgba(35,172,56,0.35)}
 .cta-primary:hover{transform:translateY(-2px);box-shadow:0 6px 20px rgba(35,172,56,0.45)}
 .cta-secondary{flex:1;background:#fff;color:var(--primary);border:2px solid var(--primary);padding:0.9rem 1.5rem;border-radius:var(--radius-md);font-size:1rem;font-weight:700;text-align:center;cursor:pointer;transition:var(--transition)}
 .cta-secondary:hover{background:var(--primary);color:#fff}
