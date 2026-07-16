@@ -1023,7 +1023,7 @@ app.get(/^\/(?!api\/).*/, (req, res) => res.redirect('/'));
 ['SIGINT', 'SIGTERM'].forEach((sig) => process.on(sig, () => { flushStats(); process.exit(0); }));
 
 // 部署校验：curl /api/build 应看到本文件里的 buildId
-const BUILD_ID = '20260716e-opportunity';
+const BUILD_ID = '20260716f-layout-fix';
 app.get('/api/build', (req, res) => {
   res.json({
     ok: true,

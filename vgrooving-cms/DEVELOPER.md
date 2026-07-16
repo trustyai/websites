@@ -205,22 +205,23 @@ vgrooving-cms/
 | 仪表盘 | 概览、**业务员商机统计**、访问量、语言完成度 |
 | 品牌/首页/选型/产品/联系/在线客服 | 多语言内容编辑 |
 | **聊天记录** | 查看前台 AI 会话 |
-| **收件箱** | 商机表格：状态、分配、跟进备注、邮件回复 |
+| **商机中心** | 按来源筛选、买家/产品信息、状态/分配、跟进备注、邮件回复、查看 AI 对话 |
 | 媒体库 / 翻译与备份 / 账号 | 资源、SMTP/Webhook、多用户 |
 
-主题：graphite / dark / navy / slate / light / beige（仅后台皮肤）。
+主题：graphite / dark / navy / slate / light / beige（仅后台皮肤）。  
+弹窗/卡片请用 `var(--panel)` / `var(--panel-2)`，**不要**用未定义的 `--card`。
+
+更完整的对接说明见 **`HANDOFF.md`**。
 
 ## 10. 宝塔部署要点
 
+线上目录（如 `/www/vgrooving-cms`）**常常不是 git 仓库**，不要依赖 `git pull`。推荐：
+
 ```bash
-# 示例：拉取分支并保留数据
-cd /www
-# 备份 uploads + data 后更新代码
-cd /www/vgrooving-cms && git fetch && git checkout cursor/multilang-cms-rebuild-78df && git pull
-npm install
-pm2 restart vgrooving-cms
+curl -fsSL https://raw.githubusercontent.com/trustyai/websites/cursor/multilang-cms-rebuild-78df/vgrooving-cms/scripts/baota-update.sh | bash
 ```
 
+脚本会 rsync 更新代码并保留 `data/`、`public/uploads/`，重启 pm2 后校验 `/api/build`。  
 Nginx：反代 `127.0.0.1:3000`，建议 `client_max_body_size 300m;`  
 运行用户（如 `www`）需对 `data/`、`public/uploads/` 可写。
 
