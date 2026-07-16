@@ -37,7 +37,14 @@
   function isAdmin() { return me && me.role === 'admin'; }
   const ROLE_LABEL = { admin: '管理员', sales: '业务员', editor: '制作员' };
 
-  const SEC_TITLES = { dashboard: '仪表盘', brand: '品牌与导航', hero: '首页文案', wizard: '智能选型', products: '产品管理', contact: '联系页', chat: '在线客服', inbox: '收件箱', media: '媒体库', tools: '翻译与备份', accounts: '账号管理', account: '账号安全' };
+    const SEC_TITLES = { dashboard: '仪表盘', brand: '品牌与导航', hero: '首页文案', wizard: '智能选型', products: '产品管理', contact: '联系页', chat: '在线客服', chats: '聊天记录', inbox: '收件箱', media: '媒体库', tools: '翻译与备份', accounts: '账号管理', account: '账号安全' };
+  const LEAD_STATUS_LABEL = { new: '未处理', following: '跟进中', replied: '已回复', won: '已成交', closed: '已关闭' };
+  const LEAD_STATUS_KEYS = ['new', 'following', 'replied', 'won', 'closed'];
+  function statusLabel(st) { return LEAD_STATUS_LABEL[st] || LEAD_STATUS_LABEL.new; }
+  function statusBadge(st) {
+    const colors = { new: 'var(--danger)', following: '#d97706', replied: '#2563eb', won: '#16a34a', closed: 'var(--muted)' };
+    return '<span style="display:inline-block;padding:0.1rem 0.45rem;border-radius:4px;font-size:0.72rem;background:' + (colors[st] || 'var(--muted)') + ';color:#fff">' + esc(statusLabel(st)) + '</span>';
+  }
 
   // 简易富文本编辑器（无依赖，基于 contenteditable）
   function richEditor(obj, key) {
@@ -948,7 +955,7 @@
     return leadsCache;
   }
   function updateInboxBadge() {
-    const unread = (leadsCache || []).filter((l) => !l.read).length;
+    const unread = (leadsCache || []).filter((l) => !l.read || l.status === 'new').length;
     const b = $('#inboxBadge');
     if (b) { b.textContent = unread || ''; b.style.display = unread ? 'inline-block' : 'none'; }
   }
@@ -960,18 +967,43 @@
     const leads = await loadLeads(true).catch(() => []);
     updateInboxBadge();
     sec.innerHTML = '';
-    const unread = leads.filter((l) => !l.read).length;
+    const unread = leads.filter((l) => !l.read || l.status === 'new').length;
     const c1 = card('概览');
     const g = document.createElement('div'); g.className = 'stat-grid';
     const stat = (n, l) => '<div class="stat"><div class="n">' + n + '</div><div class="l">' + l + '</div></div>';
     const now = new Date();
     const newThisMonth = (defL.products || []).filter((p) => { if (!p.createdAt) return false; const d = new Date(p.createdAt); return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth(); }).length;
-    g.innerHTML = stat((defL.products || []).filter((p) => !p.deleted).length, '产品数') + stat(newThisMonth, '本月新增产品') + stat(files.length, '媒体文件') + stat(leads.length, '累计询盘') + stat(unread, '未读询盘') + stat(langs.length, '语言');
+    g.innerHTML = stat((defL.products || []).filter((p) => !p.deleted).length, '产品数') + stat(newThisMonth, '本月新增产品') + stat(files.length, '媒体文件') + stat(leads.length, '累计询盘') + stat(unread, '待跟进询盘') + stat(langs.length, '语言');
     c1.appendChild(g);
     const quick = document.createElement('div'); quick.className = 'quick';
     langs.forEach((l) => { const a = document.createElement('a'); a.className = 'btn ghost'; a.target = '_blank'; a.href = (l.code === (data.defaultLang || 'zh') ? '/' : '/' + l.code); a.textContent = '🔎 ' + (l.label || l.code); quick.appendChild(a); });
     c1.appendChild(quick);
     sec.appendChild(c1);
+
+    // 业务员维度商机统计
+    if (!me || me.role !== 'editor') {
+      const leadStats = await fetch('/api/leads/stats').then((r) => r.json()).catch(() => null);
+      if (leadStats && leadStats.byOwner) {
+        const cS = card('业务员商机统计');
+        hint(cS, '按负责人汇总询盘数量、本月新增、跟进状态与成交。业务员仅看自己的数据。');
+        const tg = document.createElement('div'); tg.className = 'stat-grid';
+        const t = leadStats.totals || {};
+        tg.innerHTML = stat(t.total || 0, '可见询盘') + stat(t.thisMonth || 0, '本月新增') + stat(t.unread || 0, '未读') + stat(t.won || 0, '已成交') +
+          stat((t.byStatus && t.byStatus.new) || 0, '未处理') + stat((t.byStatus && t.byStatus.following) || 0, '跟进中');
+        cS.appendChild(tg);
+        const table = document.createElement('table'); table.className = 'ptable'; table.style.marginTop = '0.8rem';
+        table.innerHTML = '<thead><tr><th>业务员</th><th>合计</th><th>本月</th><th>未处理</th><th>跟进中</th><th>已回复</th><th>已成交</th><th>关闭</th></tr></thead>';
+        const tb = document.createElement('tbody');
+        (leadStats.byOwner || []).forEach((row) => {
+          const tr = document.createElement('tr');
+          const bs = row.byStatus || {};
+          tr.innerHTML = '<td>' + esc(row.ownerName || '-') + '</td><td>' + row.total + '</td><td>' + row.thisMonth + '</td><td>' + (bs.new || 0) + '</td><td>' + (bs.following || 0) + '</td><td>' + (bs.replied || 0) + '</td><td>' + (bs.won || 0) + '</td><td>' + (bs.closed || 0) + '</td>';
+          tb.appendChild(tr);
+        });
+        table.appendChild(tb); cS.appendChild(table);
+        sec.appendChild(cS);
+      }
+    }
 
     // 访问统计
     const stats = await fetch('/api/stats').then((r) => r.json()).catch(() => null);
@@ -1014,40 +1046,134 @@
     sec.appendChild(c2);
   }
 
+  // ============ 聊天记录（前台 AI 自动回复会话） ============
+  async function renderChats() {
+    const sec = $('#secChats'); sec.innerHTML = '';
+    const c = card('前台客服聊天记录');
+    hint(c, '访客与网站 AI 自动回复的对话会实时上报到这里，便于业务员查看意向。制作员不可见。');
+    const bar = document.createElement('div'); bar.style.cssText = 'display:flex;gap:0.5rem;margin-bottom:0.8rem;flex-wrap:wrap';
+    const refresh = document.createElement('button'); refresh.className = 'btn ghost'; refresh.textContent = '↻ 刷新';
+    bar.appendChild(refresh); c.appendChild(bar);
+    const layout = document.createElement('div'); layout.style.cssText = 'display:grid;grid-template-columns:minmax(240px,320px) 1fr;gap:0.8rem;min-height:360px';
+    const listHost = document.createElement('div'); listHost.style.cssText = 'border:1px solid var(--border);border-radius:8px;overflow:auto;max-height:70vh';
+    const detailHost = document.createElement('div'); detailHost.style.cssText = 'border:1px solid var(--border);border-radius:8px;padding:0.8rem;overflow:auto;max-height:70vh;background:var(--card-2,transparent)';
+    detailHost.innerHTML = '<div style="color:var(--muted)">选择左侧会话查看完整对话</div>';
+    layout.appendChild(listHost); layout.appendChild(detailHost); c.appendChild(layout); sec.appendChild(c);
+
+    async function loadList() {
+      listHost.innerHTML = '<div style="padding:0.8rem;color:var(--muted)">加载中...</div>';
+      const res = await fetch('/api/chats');
+      if (res.status === 403) { listHost.innerHTML = '<div style="padding:0.8rem;color:var(--muted)">无权限查看聊天记录</div>'; return; }
+      const j = await res.json().catch(() => ({ chats: [] }));
+      const chats = j.chats || [];
+      if (!chats.length) { listHost.innerHTML = '<div style="padding:0.8rem;color:var(--muted)">暂无聊天记录。访客在前台打开客服并发送消息后会出现在这里。</div>'; return; }
+      listHost.innerHTML = '';
+      chats.forEach((ch) => {
+        const item = document.createElement('div');
+        item.style.cssText = 'padding:0.7rem 0.8rem;border-bottom:1px solid var(--border);cursor:pointer';
+        item.innerHTML = '<div style="font-weight:500;font-size:0.88rem">' + esc((ch.preview || '(无用户消息)').slice(0, 60)) + '</div>' +
+          '<div class="pt-sub">' + esc(new Date(ch.updatedAt).toLocaleString()) + ' · ' + (ch.messageCount || 0) + ' 条 · ' + esc(ch.lang || '-') + '</div>' +
+          '<div class="pt-sub">' + esc(ch.page || '') + '</div>';
+        item.addEventListener('click', async () => {
+          Array.from(listHost.children).forEach((el) => { el.style.background = ''; });
+          item.style.background = 'rgba(230,0,18,0.06)';
+          detailHost.innerHTML = '<div style="color:var(--muted)">加载中...</div>';
+          const dr = await fetch('/api/chats/' + encodeURIComponent(ch.id));
+          const dj = await dr.json().catch(() => ({}));
+          const full = dj.chat;
+          if (!full) { detailHost.innerHTML = '<div style="color:var(--muted)">加载失败</div>'; return; }
+          let html = '<div style="display:flex;justify-content:space-between;gap:0.5rem;margin-bottom:0.6rem;flex-wrap:wrap">' +
+            '<div><b>会话详情</b><div class="pt-sub">' + esc(full.page || '') + ' · IP ' + esc(full.ip || '-') + '</div></div>';
+          if (isAdmin()) {
+            html += '<button class="btn ghost del" id="chatDelBtn" type="button">删除会话</button>';
+          }
+          html += '</div><div id="chatThread"></div>';
+          detailHost.innerHTML = html;
+          const thread = detailHost.querySelector('#chatThread');
+          (full.messages || []).forEach((m) => {
+            const row = document.createElement('div');
+            const isAgent = m.role === 'agent';
+            row.style.cssText = 'display:flex;margin:0.35rem 0;' + (isAgent ? '' : 'justify-content:flex-end');
+            row.innerHTML = '<div style="max-width:85%;padding:0.5rem 0.7rem;border-radius:8px;font-size:0.88rem;white-space:pre-wrap;' +
+              (isAgent ? 'background:var(--bg);border:1px solid var(--border)' : 'background:var(--brand);color:#fff') + '">' +
+              '<div style="opacity:.7;font-size:0.7rem;margin-bottom:0.15rem">' + (isAgent ? 'AI 客服' : '访客') + ' · ' + esc(new Date(m.time).toLocaleString()) + '</div>' +
+              esc(m.text || '') + '</div>';
+            thread.appendChild(row);
+          });
+          const delBtn = detailHost.querySelector('#chatDelBtn');
+          if (delBtn) delBtn.addEventListener('click', async () => {
+            if (!confirm('删除该会话？')) return;
+            await fetch('/api/chats', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: ch.id }) });
+            toast('已删除', 'ok'); detailHost.innerHTML = '<div style="color:var(--muted)">已删除</div>'; loadList();
+          });
+        });
+        listHost.appendChild(item);
+      });
+    }
+    refresh.addEventListener('click', loadList);
+    loadList();
+  }
+
   // ============ 收件箱 / 商机（询盘） ============
+  let inboxFilter = 'all';
+  let inboxOpenId = null;
   async function renderInbox() {
     const sec = $('#secInbox'); sec.innerHTML = '';
     const c = card('商机 / 询盘');
-    hint(c, me && me.role === 'sales' ? '这里只显示分配给你的询盘。' : '来自产品详情页的询盘会自动归属该产品的负责人；也可在「负责人」下拉里手动分配，业务员只能看到分给自己的询盘。');
-    const bar = document.createElement('div'); bar.style.cssText = 'display:flex;gap:0.5rem;margin-bottom:0.8rem';
+    hint(c, me && me.role === 'sales'
+      ? '这里只显示分配给你的询盘。可修改跟进状态、写内部备注，并通过邮件回复买家（需管理员先在「翻译与备份」配置 SMTP）。'
+      : '来自产品详情页的询盘会自动归属该产品的负责人。可分配负责人、更新跟进状态，并邮件回复买家。');
+    const bar = document.createElement('div'); bar.style.cssText = 'display:flex;gap:0.5rem;margin-bottom:0.8rem;flex-wrap:wrap;align-items:center';
     const refresh = document.createElement('button'); refresh.className = 'btn ghost'; refresh.textContent = '↻ 刷新'; refresh.addEventListener('click', () => { leadsCache = null; renderInbox(); });
     const exp = document.createElement('button'); exp.className = 'btn ghost'; exp.textContent = '导出 CSV';
-    bar.appendChild(refresh); bar.appendChild(exp); c.appendChild(bar);
+    const filterSel = document.createElement('select'); filterSel.className = 'inp'; filterSel.style.width = 'auto';
+    filterSel.innerHTML = '<option value="all">全部状态</option>' + LEAD_STATUS_KEYS.map((k) => '<option value="' + k + '"' + (inboxFilter === k ? ' selected' : '') + '>' + statusLabel(k) + '</option>').join('');
+    filterSel.value = inboxFilter;
+    filterSel.addEventListener('change', () => { inboxFilter = filterSel.value; renderInbox(); });
+    bar.appendChild(refresh); bar.appendChild(exp); bar.appendChild(filterSel); c.appendChild(bar);
     const host = document.createElement('div'); host.innerHTML = '<div style="color:var(--muted)">加载中...</div>'; c.appendChild(host);
     sec.appendChild(c);
     const leads = await loadLeads(true); updateInboxBadge();
     const canAssign = isAdmin();
+    const filtered = inboxFilter === 'all' ? leads : leads.filter((l) => (l.status || 'new') === inboxFilter);
     exp.addEventListener('click', () => {
-      const rows = [['时间', '姓名', '邮箱', '公司', '产品', '语言', '负责人', '内容']].concat(leads.map((l) => [new Date(l.time).toLocaleString(), l.name, l.email, l.company, l.product, l.lang, ownerName(l.owner), (l.message || '').replace(/\n/g, ' ')]));
+      const rows = [['时间', '状态', '姓名', '邮箱', '公司', '产品', '语言', '负责人', '回复数', '内容', '备注']].concat(leads.map((l) => [
+        new Date(l.time).toLocaleString(), statusLabel(l.status || 'new'), l.name, l.email, l.company, l.product, l.lang, ownerName(l.owner),
+        (l.replies || []).length, (l.message || '').replace(/\n/g, ' '), (l.note || '').replace(/\n/g, ' '),
+      ]));
       const csv = '\ufeff' + rows.map((r) => r.map((x) => '"' + String(x == null ? '' : x).replace(/"/g, '""') + '"').join(',')).join('\n');
       const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' })); a.download = 'leads.csv'; a.click();
     });
     if (!leads.length) { host.innerHTML = '<div style="color:var(--muted)">暂无询盘。前台联系页/产品页提交后会显示在这里。</div>'; return; }
+    if (!filtered.length) { host.innerHTML = '<div style="color:var(--muted)">当前筛选下没有询盘。</div>'; return; }
     host.innerHTML = '';
     const table = document.createElement('table'); table.className = 'ptable';
-    table.innerHTML = '<thead><tr><th>询盘 / 买家</th><th>负责人</th><th>发送时间</th><th class="pt-ops">操作</th></tr></thead>';
+    table.innerHTML = '<thead><tr><th>询盘 / 买家</th><th>状态</th><th>负责人</th><th>发送时间</th><th class="pt-ops">操作</th></tr></thead>';
     const tb = document.createElement('tbody'); table.appendChild(tb);
-    leads.forEach((l) => {
-      const tr = document.createElement('tr'); if (!l.read) tr.style.fontWeight = '500';
+    filtered.forEach((l) => {
+      const tr = document.createElement('tr'); if (!l.read || l.status === 'new') tr.style.fontWeight = '500';
       const buyer = [l.email, l.company].filter(Boolean).join(' · ');
+      const replyN = (l.replies || []).length;
       tr.innerHTML =
         '<td style="max-width:420px">' + (l.read ? '' : '<span style="color:var(--brand)">● </span>') + '<b>' + esc(l.name || '(未填姓名)') + '</b>' +
         (l.product ? ' <span class="pt-sub">· ' + esc(l.product) + '</span>' : '') +
         (buyer ? '<div class="pt-sub">' + esc(buyer) + '</div>' : '') +
-        '<div class="msg" style="font-size:0.85rem;white-space:pre-wrap;margin-top:0.2rem">' + esc(l.message || '') + '</div></td>' +
+        '<div class="msg" style="font-size:0.85rem;white-space:pre-wrap;margin-top:0.2rem">' + esc(l.message || '') + '</div>' +
+        (replyN ? '<div class="pt-sub" style="margin-top:0.2rem">已回复 ' + replyN + ' 次' + (l.lastReplyAt ? ' · 最近 ' + new Date(l.lastReplyAt).toLocaleString() : '') + '</div>' : '') +
+        '</td>' +
+        '<td class="pt-status"></td>' +
         '<td class="pt-owner"></td>' +
         '<td class="pt-sub">' + esc(new Date(l.time).toLocaleString()) + '</td>' +
         '<td class="pt-ops"></td>';
+      const stTd = tr.querySelector('.pt-status');
+      const stSel = document.createElement('select'); stSel.className = 'inp'; stSel.style.minWidth = '100px';
+      stSel.innerHTML = LEAD_STATUS_KEYS.map((k) => '<option value="' + k + '"' + ((l.status || 'new') === k ? ' selected' : '') + '>' + statusLabel(k) + '</option>').join('');
+      stSel.addEventListener('change', async () => {
+        const r = await fetch('/api/leads/status', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: l.id, status: stSel.value }) });
+        if (!r.ok) { toast('更新失败', 'bad'); return; }
+        l.status = stSel.value; toast('状态已更新', 'ok'); leadsCache = null; updateInboxBadge();
+      });
+      stTd.appendChild(stSel);
       const ownerTd = tr.querySelector('.pt-owner');
       if (canAssign) {
         const sel = document.createElement('select'); sel.className = 'inp'; sel.style.minWidth = '110px';
@@ -1056,17 +1182,94 @@
         ownerTd.appendChild(sel);
       } else { ownerTd.textContent = ownerName(l.owner); }
       const ops = tr.querySelector('.pt-ops');
+      const open = document.createElement('button'); open.textContent = '跟进/回复';
+      open.addEventListener('click', () => { inboxOpenId = l.id; showLeadDetail(l); });
       const rd = document.createElement('button'); rd.textContent = l.read ? '标未读' : '标已读';
       rd.addEventListener('click', async () => { await fetch('/api/leads/read', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: l.id, read: !l.read }) }); leadsCache = null; renderInbox(); });
       const del = document.createElement('button'); del.className = 'del'; del.textContent = '删除';
       del.addEventListener('click', async () => { if (!confirm('删除该条询盘？')) return; await fetch('/api/leads', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: l.id }) }); leadsCache = null; renderInbox(); });
-      ops.appendChild(rd); ops.appendChild(del);
+      ops.appendChild(open); ops.appendChild(rd); ops.appendChild(del);
       tb.appendChild(tr);
     });
     host.appendChild(table);
+    if (inboxOpenId) {
+      const openLead = leads.find((x) => x.id === inboxOpenId);
+      if (openLead) showLeadDetail(openLead);
+    }
   }
 
-  const RENDERERS = { dashboard: renderDashboard, brand: renderBrand, hero: renderHero, wizard: renderWizard, products: renderProducts, contact: renderContact, chat: renderChat, inbox: renderInbox, media: renderMedia, tools: renderTools, accounts: renderAccounts, account: renderAccount };
+  function showLeadDetail(l) {
+    let panel = $('#leadDetailPanel');
+    if (!panel) {
+      panel = document.createElement('div');
+      panel.id = 'leadDetailPanel';
+      panel.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:80;display:flex;align-items:center;justify-content:center;padding:1rem';
+      document.body.appendChild(panel);
+    }
+    panel.classList.remove('hidden');
+    panel.innerHTML = '';
+    const box = document.createElement('div');
+    box.style.cssText = 'background:var(--card);color:var(--text);width:min(640px,100%);max-height:90vh;overflow:auto;border-radius:10px;padding:1.1rem 1.2rem;border:1px solid var(--border)';
+    box.innerHTML =
+      '<div style="display:flex;justify-content:space-between;gap:0.5rem;align-items:flex-start;margin-bottom:0.8rem">' +
+      '<div><h3 style="margin:0 0 0.3rem">跟进：' + esc(l.name || '(未填姓名)') + '</h3>' +
+      statusBadge(l.status || 'new') +
+      '<div class="pt-sub" style="margin-top:0.3rem">' + esc([l.email, l.company, l.product].filter(Boolean).join(' · ')) + '</div></div>' +
+      '<button class="btn ghost" type="button" id="leadClose">关闭</button></div>' +
+      '<div class="msg" style="white-space:pre-wrap;padding:0.7rem;border:1px solid var(--border);border-radius:8px;margin-bottom:0.8rem;background:var(--bg)">' + esc(l.message || '') + '</div>' +
+      '<div class="lbl">内部备注</div><textarea class="inp" id="leadNote" rows="2" style="width:100%;margin-bottom:0.6rem">' + esc(l.note || '') + '</textarea>' +
+      '<div style="display:flex;gap:0.5rem;margin-bottom:1rem;flex-wrap:wrap"><button class="btn ghost" type="button" id="leadSaveNote">保存备注/状态</button>' +
+      '<select class="inp" id="leadStatusSel" style="width:auto">' + LEAD_STATUS_KEYS.map((k) => '<option value="' + k + '"' + ((l.status || 'new') === k ? ' selected' : '') + '>' + statusLabel(k) + '</option>').join('') + '</select></div>' +
+      '<div class="lbl">回复记录</div><div id="leadReplies" style="margin-bottom:0.8rem"></div>' +
+      '<div class="lbl">写回复' + (l.email ? '（可邮件发给 ' + esc(l.email) + '）' : '（该询盘无邮箱，仅内部记录）') + '</div>' +
+      '<textarea class="inp" id="leadReplyText" rows="4" style="width:100%;margin:0.3rem 0 0.5rem" placeholder="输入回复内容…"></textarea>' +
+      '<label style="display:flex;align-items:center;gap:0.4rem;margin-bottom:0.6rem;font-size:0.88rem"><input type="checkbox" id="leadSendMail"' + (l.email ? ' checked' : ' disabled') + '> 同时发送邮件给买家（需已配置 SMTP）</label>' +
+      '<button class="btn" type="button" id="leadSendReply">提交回复</button>';
+    panel.appendChild(box);
+    const repliesEl = box.querySelector('#leadReplies');
+    function renderReplies() {
+      const list = l.replies || [];
+      if (!list.length) { repliesEl.innerHTML = '<div class="pt-sub">暂无回复</div>'; return; }
+      repliesEl.innerHTML = list.slice().reverse().map((r) =>
+        '<div style="border:1px solid var(--border);border-radius:8px;padding:0.55rem 0.7rem;margin-bottom:0.4rem">' +
+        '<div class="pt-sub">' + esc(r.byName || '业务员') + ' · ' + esc(new Date(r.time).toLocaleString()) +
+        (r.emailed ? ' · <span style="color:#16a34a">已发邮件</span>' : '') +
+        (r.emailError ? ' · <span style="color:var(--danger)">邮件失败：' + esc(r.emailError) + '</span>' : '') +
+        '</div><div style="white-space:pre-wrap;margin-top:0.25rem">' + esc(r.text || '') + '</div></div>'
+      ).join('');
+    }
+    renderReplies();
+    const close = () => { panel.classList.add('hidden'); inboxOpenId = null; panel.onclick = null; };
+    box.querySelector('#leadClose').addEventListener('click', close);
+    panel.onclick = (e) => { if (e.target === panel) close(); };
+    box.querySelector('#leadSaveNote').addEventListener('click', async () => {
+      const status = box.querySelector('#leadStatusSel').value;
+      const note = box.querySelector('#leadNote').value;
+      const r = await fetch('/api/leads/status', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: l.id, status, note }) });
+      if (!r.ok) return toast('保存失败', 'bad');
+      l.status = status; l.note = note; toast('已保存', 'ok'); leadsCache = null; renderInbox();
+    });
+    box.querySelector('#leadSendReply').addEventListener('click', async () => {
+      const text = box.querySelector('#leadReplyText').value.trim();
+      if (!text) return toast('请填写回复内容', 'bad');
+      const sendEmail = box.querySelector('#leadSendMail').checked;
+      const btn = box.querySelector('#leadSendReply'); btn.disabled = true; btn.textContent = '提交中...';
+      const r = await fetch('/api/leads/reply', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: l.id, text, sendEmail }) });
+      const j = await r.json().catch(() => ({}));
+      btn.disabled = false; btn.textContent = '提交回复';
+      if (!r.ok) return toast(j.error || '回复失败', 'bad');
+      if (j.lead) Object.assign(l, j.lead);
+      else { l.replies = (l.replies || []).concat([j.reply]); l.status = 'replied'; }
+      box.querySelector('#leadReplyText').value = '';
+      if (sendEmail && j.emailSent) toast('回复已保存并发送邮件', 'ok');
+      else if (sendEmail && j.emailError) toast('回复已保存，但邮件失败：' + j.emailError, 'bad');
+      else toast('回复已保存', 'ok');
+      leadsCache = null; renderReplies();
+      box.querySelector('#leadStatusSel').value = l.status || 'replied';
+    });
+  }
+
+  const RENDERERS = { dashboard: renderDashboard, brand: renderBrand, hero: renderHero, wizard: renderWizard, products: renderProducts, contact: renderContact, chat: renderChat, chats: renderChats, inbox: renderInbox, media: renderMedia, tools: renderTools, accounts: renderAccounts, account: renderAccount };
   function renderSection(sec) { if (RENDERERS[sec]) RENDERERS[sec](); }
 
   function renderLangTabs() {
@@ -1086,7 +1289,7 @@
     $('#secTitle').textContent = SEC_TITLES[sec] || '';
     if (sec === 'products') editIdx = null;
     if (sec === 'accounts') acctEditing = null;
-    $('#langTabs').style.display = ['dashboard', 'inbox', 'media', 'accounts', 'account'].indexOf(sec) > -1 ? 'none' : '';
+    $('#langTabs').style.display = ['dashboard', 'inbox', 'chats', 'media', 'accounts', 'account'].indexOf(sec) > -1 ? 'none' : '';
     updatePreview();
     renderSection(sec);
   }
@@ -1113,8 +1316,8 @@
   function showApp() { $('#loginView').classList.add('hidden'); $('#appView').classList.remove('hidden'); }
   function allowedSecs() {
     if (!me || me.role === 'admin') return null; // 全部
-    if (me.role === 'editor') return ['dashboard', 'brand', 'hero', 'wizard', 'products', 'contact', 'chat', 'media', 'tools', 'account']; // 制作员：看不到询盘(收件箱)
-    return ['dashboard', 'products', 'inbox', 'media', 'account']; // 业务员：含自己的询盘
+    if (me.role === 'editor') return ['dashboard', 'brand', 'hero', 'wizard', 'products', 'contact', 'chat', 'media', 'tools', 'account']; // 制作员：看不到询盘/聊天记录
+    return ['dashboard', 'products', 'inbox', 'chats', 'media', 'account']; // 业务员：含自己的询盘 + 聊天记录
   }
   function updateMenusForRole() {
     const allow = allowedSecs();

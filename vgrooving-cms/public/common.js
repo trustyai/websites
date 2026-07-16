@@ -146,7 +146,37 @@
       '<p>' + esc((VG.L.footer && VG.L.footer.copyright) || '') + '</p>';
   }
 
-  // ---------- 在线客服 ----------
+  // ---------- 在线客服（自动回复 + 上报后台聊天记录） ----------
+  let chatSessionId = '';
+  let chatLog = []; // { role, text, time }
+  function getChatSessionId() {
+    try {
+      chatSessionId = sessionStorage.getItem('vg_chat_sid') || '';
+      if (!chatSessionId) {
+        chatSessionId = 's_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 10);
+        sessionStorage.setItem('vg_chat_sid', chatSessionId);
+      }
+    } catch (e) {
+      if (!chatSessionId) chatSessionId = 's_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 10);
+    }
+    return chatSessionId;
+  }
+  function reportChat(extraMsgs) {
+    const append = Array.isArray(extraMsgs) ? extraMsgs : [];
+    if (!append.length) return;
+    const sid = getChatSessionId();
+    try {
+      fetch('/api/chats', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          sessionId: sid, append: true, messages: append,
+          lang: VG.lang, page: location.pathname + location.search,
+        }),
+        keepalive: true,
+      }).catch(function () {});
+    } catch (e) { /* ignore */ }
+  }
   function renderChat() {
     const chat = VG.L.chat || {};
     const set = (id, v) => { const e = document.getElementById(id); if (e) e.textContent = v; };
@@ -154,7 +184,11 @@
     set('cwName', chat.agentName || '');
     set('cwStatus', chat.status || '');
     const msgs = document.getElementById('chatMsgs');
-    if (msgs) msgs.innerHTML = '<div class="cm a"><div class="cm-av">' + esc(chat.avatar || '客') + '</div><div class="cm-bubble">' + esc(chat.greeting || '') + '</div></div>';
+    chatLog = [];
+    if (msgs) {
+      msgs.innerHTML = '<div class="cm a"><div class="cm-av">' + esc(chat.avatar || '客') + '</div><div class="cm-bubble">' + esc(chat.greeting || '') + '</div></div>';
+      if (chat.greeting) chatLog.push({ role: 'agent', text: String(chat.greeting), time: Date.now() });
+    }
     const chips = document.getElementById('chatChips');
     if (chips) {
       chips.innerHTML = (chat.quickChips || []).map((c) => '<div class="cq" data-q="' + esc(c) + '">' + esc(c) + '</div>').join('');
@@ -174,6 +208,7 @@
     win.classList.toggle('open');
     if (win.classList.contains('open')) {
       fab.textContent = '🛑'; fab.style.background = '#E60012';
+      getChatSessionId();
       setTimeout(() => { const i = document.getElementById('cInp'); if (i) i.focus(); }, 200);
     } else { fab.textContent = '💬'; fab.style.background = ''; }
   };
@@ -187,15 +222,33 @@
     const msgs = document.getElementById('chatMsgs');
     if (!msgs) return;
     const chat = VG.L.chat || {};
+    const now = Date.now();
     const u = document.createElement('div');
     u.className = 'cm u';
     u.innerHTML = '<div class="cm-av">🧑</div><div class="cm-bubble">' + esc(text) + '</div>';
     msgs.appendChild(u); msgs.scrollTop = msgs.scrollHeight;
+    const userMsg = { role: 'user', text: String(text), time: now };
+    // 同一浏览器会话仅首次上报问候语，避免刷新页面后重复追加
+    let withGreeting = [];
+    try {
+      const sid = getChatSessionId();
+      if (sessionStorage.getItem('vg_chat_greet') !== sid && chatLog.length === 1 && chatLog[0].role === 'agent') {
+        withGreeting = chatLog.slice();
+        sessionStorage.setItem('vg_chat_greet', sid);
+      }
+    } catch (e) {
+      if (chatLog.length === 1 && chatLog[0].role === 'agent') withGreeting = chatLog.slice();
+    }
+    chatLog.push(userMsg);
+    const replyText = autoReply(text);
     setTimeout(() => {
       const a = document.createElement('div');
       a.className = 'cm a';
-      a.innerHTML = '<div class="cm-av">' + esc(chat.avatar || '客') + '</div><div class="cm-bubble">' + esc(autoReply(text)) + '</div>';
+      a.innerHTML = '<div class="cm-av">' + esc(chat.avatar || '客') + '</div><div class="cm-bubble">' + esc(replyText) + '</div>';
       msgs.appendChild(a); msgs.scrollTop = msgs.scrollHeight;
+      const agentMsg = { role: 'agent', text: String(replyText), time: Date.now() };
+      chatLog.push(agentMsg);
+      reportChat(withGreeting.concat([userMsg, agentMsg]));
     }, 600 + Math.random() * 500);
   }
   global.cqSend = cqSend;

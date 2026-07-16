@@ -4,6 +4,7 @@ data/content.json
 data/config.json
 data/leads.json
 data/stats.json
+data/chats.json
 # 上传的文件（保留目录）
 public/uploads/*
 !public/uploads/.gitkeep

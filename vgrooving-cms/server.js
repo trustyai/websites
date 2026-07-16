@@ -21,7 +21,12 @@ const CONTENT_FILE = path.join(DATA_DIR, 'content.json');
 const DEFAULT_CONTENT_FILE = path.join(DATA_DIR, 'content.default.json');
 const CONFIG_FILE = path.join(DATA_DIR, 'config.json');
 const LEADS_FILE = path.join(DATA_DIR, 'leads.json');
+const CHATS_FILE = path.join(DATA_DIR, 'chats.json');
 const PUBLIC_DIR = path.join(__dirname, 'public');
+
+// 询盘跟进状态
+const LEAD_STATUSES = ['new', 'following', 'replied', 'won', 'closed'];
+const LEAD_STATUS_LABEL = { new: '未处理', following: '跟进中', replied: '已回复', won: '已成交', closed: '已关闭' };
 
 const DEFAULT_USER = 'admin';
 const DEFAULT_PASS = 'admin123';
@@ -353,26 +358,65 @@ async function notifyWebhook(lead) {
   try { await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payloads[0]) }); }
   catch (e) { /* 通知失败不影响主流程 */ }
 }
-async function sendLeadEmail(lead) {
-  if (!nodemailer) return;
-  const s = ((readJson(CONTENT_FILE, {}).settings) || {}).smtp || {};
-  if (!s.host || !s.to) return;
-  try {
-    const transporter = nodemailer.createTransport({
+function smtpSettings() {
+  return ((readJson(CONTENT_FILE, {}).settings) || {}).smtp || {};
+}
+function createMailer() {
+  if (!nodemailer) return null;
+  const s = smtpSettings();
+  if (!s.host) return null;
+  return {
+    settings: s,
+    transporter: nodemailer.createTransport({
       host: s.host, port: Number(s.port) || 465, secure: s.secure !== false && Number(s.port) !== 587,
       auth: s.user ? { user: s.user, pass: s.pass } : undefined,
-    });
+    }),
+  };
+}
+async function sendLeadEmail(lead) {
+  const mail = createMailer();
+  if (!mail || !mail.settings.to) return;
+  try {
     const html = `<h3>新的询价 / 留言</h3><ul>
       <li>姓名：${escHtml(lead.name)}</li><li>邮箱：${escHtml(lead.email)}</li>
       <li>公司：${escHtml(lead.company)}</li><li>语言：${escHtml(lead.lang)}</li>
       <li>页面：${escHtml(lead.page)}</li></ul><p>${escHtml(lead.message).replace(/\n/g, '<br>')}</p>`;
-    await transporter.sendMail({
-      from: s.from || s.user, to: s.to, subject: '【网站询价】' + (lead.name || lead.email || '新留言'),
+    await mail.transporter.sendMail({
+      from: mail.settings.from || mail.settings.user, to: mail.settings.to,
+      subject: '【网站询价】' + (lead.name || lead.email || '新留言'),
       replyTo: lead.email || undefined, html,
     });
   } catch (e) { /* 邮件失败不影响主流程 */ }
 }
+/** 业务员回复买家：发到询盘邮箱，Reply-To 为 SMTP 收件邮箱便于买家继续回复 */
+async function sendLeadReplyEmail(lead, replyText, agentName) {
+  const mail = createMailer();
+  if (!mail) return { ok: false, error: '未安装 nodemailer 或未配置 SMTP' };
+  if (!lead.email) return { ok: false, error: '该询盘没有买家邮箱' };
+  try {
+    const brand = (((readJson(CONTENT_FILE, {}).i18n || {}).zh || {}).brandName) || 'V槽PRO';
+    const html = `<p>${escHtml(agentName || '客服')} 回复了您的询盘：</p>
+      <blockquote style="border-left:3px solid #ccc;padding-left:12px;color:#333">${escHtml(replyText).replace(/\n/g, '<br>')}</blockquote>
+      <hr><p style="color:#888;font-size:12px">原始留言：${escHtml(lead.message || '').replace(/\n/g, '<br>')}</p>
+      <p style="color:#888;font-size:12px">— ${escHtml(brand)}</p>`;
+    await mail.transporter.sendMail({
+      from: mail.settings.from || mail.settings.user,
+      to: lead.email,
+      replyTo: mail.settings.to || mail.settings.from || mail.settings.user,
+      subject: 'Re: 【' + brand + '】' + (lead.product ? lead.product + ' - ' : '') + '询盘回复',
+      html,
+    });
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: (e && e.message) || '发送失败' };
+  }
+}
 function escHtml(s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+function userNameById(id) {
+  if (!id) return '';
+  const u = readUsers().find((x) => x.id === id);
+  return u ? (u.name || u.username) : '';
+}
 app.post('/api/leads', (req, res) => {
   const b = req.body || {};
   if (b.website) return res.json({ ok: true }); // 蜜罐：机器人填了隐藏字段，静默丢弃
@@ -398,6 +442,7 @@ app.post('/api/leads', (req, res) => {
     company: String(b.company || '').slice(0, 160).trim(),
     message, lang: String(b.lang || '').slice(0, 8), page: String(b.page || '').slice(0, 300),
     owner, product, time: Date.now(), read: false, ip,
+    status: 'new', replies: [], note: '', lastReplyAt: 0, updatedAt: Date.now(),
   };
   const leads = readLeads(); leads.unshift(lead); writeJson(LEADS_FILE, leads);
   notifyWebhook(lead);
@@ -417,17 +462,67 @@ function canTouchLead(user, lead) {
   if (user.role === 'sales') return lead.owner === user.id;
   return false;
 }
-app.get('/api/leads', requireAuth, (req, res) => res.json({ leads: leadsForUser(req.user) }));
+function normalizeLead(l) {
+  if (!l) return l;
+  if (!l.status || LEAD_STATUSES.indexOf(l.status) < 0) l.status = l.read ? 'following' : 'new';
+  if (!Array.isArray(l.replies)) l.replies = [];
+  if (l.note == null) l.note = '';
+  if (!l.lastReplyAt) l.lastReplyAt = 0;
+  if (!l.updatedAt) l.updatedAt = l.time || Date.now();
+  return l;
+}
+app.get('/api/leads', requireAuth, (req, res) => {
+  res.json({ leads: leadsForUser(req.user).map(normalizeLead), statuses: LEAD_STATUS_LABEL });
+});
 app.post('/api/leads/read', requireAuth, (req, res) => {
   const leads = readLeads();
   const it = leads.find((l) => l.id === (req.body && req.body.id));
-  if (it && canTouchLead(req.user, it)) { it.read = !!(req.body.read); writeJson(LEADS_FILE, leads); }
+  if (it && canTouchLead(req.user, it)) { it.read = !!(req.body.read); it.updatedAt = Date.now(); writeJson(LEADS_FILE, leads); }
   res.json({ ok: true });
+});
+app.post('/api/leads/status', requireAuth, (req, res) => {
+  const leads = readLeads();
+  const it = leads.find((l) => l.id === (req.body && req.body.id));
+  if (!it || !canTouchLead(req.user, it)) return res.status(403).json({ error: '无权限' });
+  const st = String((req.body && req.body.status) || '');
+  if (LEAD_STATUSES.indexOf(st) < 0) return res.status(400).json({ error: '无效状态' });
+  it.status = st;
+  if (st !== 'new') it.read = true;
+  if (req.body && typeof req.body.note === 'string') it.note = String(req.body.note).slice(0, 2000);
+  it.updatedAt = Date.now();
+  writeJson(LEADS_FILE, leads);
+  res.json({ ok: true, lead: normalizeLead(it) });
+});
+app.post('/api/leads/reply', requireAuth, async (req, res) => {
+  const leads = readLeads();
+  const it = leads.find((l) => l.id === (req.body && req.body.id));
+  if (!it || !canTouchLead(req.user, it)) return res.status(403).json({ error: '无权限' });
+  const text = String((req.body && req.body.text) || '').trim().slice(0, 5000);
+  if (!text) return res.status(400).json({ error: '请填写回复内容' });
+  const sendEmail = !!(req.body && req.body.sendEmail);
+  const reply = {
+    id: crypto.randomBytes(6).toString('hex'),
+    text, by: req.user.id, byName: req.user.name || req.user.username,
+    time: Date.now(), emailed: false, emailError: '',
+  };
+  if (sendEmail) {
+    const r = await sendLeadReplyEmail(it, text, reply.byName);
+    reply.emailed = !!r.ok;
+    reply.emailError = r.ok ? '' : (r.error || '发送失败');
+  }
+  normalizeLead(it);
+  it.replies.push(reply);
+  it.lastReplyAt = reply.time;
+  it.updatedAt = reply.time;
+  it.read = true;
+  if (it.status === 'new' || it.status === 'following') it.status = 'replied';
+  writeJson(LEADS_FILE, leads);
+  res.json({ ok: true, lead: it, reply, emailSent: reply.emailed, emailError: reply.emailError || undefined });
 });
 app.post('/api/leads/assign', requireAdmin, (req, res) => {
   const leads = readLeads();
   const it = leads.find((l) => l.id === (req.body && req.body.id));
-  if (it) { it.owner = String((req.body && req.body.owner) || ''); writeJson(LEADS_FILE, leads); }
+  if (it) { it.owner = String((req.body && req.body.owner) || ''); it.updatedAt = Date.now(); writeJson(LEADS_FILE, leads); }
   res.json({ ok: true });
 });
 app.delete('/api/leads', requireAuth, (req, res) => {
@@ -435,6 +530,123 @@ app.delete('/api/leads', requireAuth, (req, res) => {
   if (req.body && req.body.all) { if (req.user.role !== 'admin') return res.status(403).json({ error: '无权限' }); leads = []; }
   else { const it = leads.find((l) => l.id === (req.body && req.body.id)); if (it && !canTouchLead(req.user, it)) return res.status(403).json({ error: '无权限' }); leads = leads.filter((l) => l.id !== (req.body && req.body.id)); }
   writeJson(LEADS_FILE, leads); res.json({ ok: true });
+});
+/** 业务员维度商机统计（管理员看全部，业务员只看自己） */
+app.get('/api/leads/stats', requireAuth, (req, res) => {
+  if (req.user.role === 'editor') return res.status(403).json({ error: '无权限' });
+  const leads = leadsForUser(req.user).map(normalizeLead);
+  const monthStart = new Date(); monthStart.setDate(1); monthStart.setHours(0, 0, 0, 0);
+  const ms = monthStart.getTime();
+  const bucket = {};
+  function ensure(id) {
+    const key = id || '_unassigned';
+    if (!bucket[key]) {
+      bucket[key] = {
+        ownerId: id || '', ownerName: id ? (userNameById(id) || id) : '未分配',
+        total: 0, unread: 0, thisMonth: 0, replied: 0, won: 0,
+        byStatus: { new: 0, following: 0, replied: 0, won: 0, closed: 0 },
+      };
+    }
+    return bucket[key];
+  }
+  leads.forEach((l) => {
+    const b = ensure(l.owner || '');
+    b.total += 1;
+    if (!l.read) b.unread += 1;
+    if ((l.time || 0) >= ms) b.thisMonth += 1;
+    const st = l.status || 'new';
+    if (b.byStatus[st] != null) b.byStatus[st] += 1;
+    if (st === 'replied' || (l.replies && l.replies.length)) b.replied += 1;
+    if (st === 'won') b.won += 1;
+  });
+  // 管理员额外列出尚无询盘的业务员，便于对照
+  if (req.user.role === 'admin') {
+    readUsers().filter((u) => u.role === 'sales' || u.role === 'admin').forEach((u) => ensure(u.id));
+  }
+  const byOwner = Object.values(bucket).sort((a, b) => b.total - a.total || a.ownerName.localeCompare(b.ownerName, 'zh'));
+  const totals = byOwner.reduce((acc, x) => {
+    acc.total += x.total; acc.unread += x.unread; acc.thisMonth += x.thisMonth; acc.won += x.won;
+    Object.keys(acc.byStatus).forEach((k) => { acc.byStatus[k] += x.byStatus[k] || 0; });
+    return acc;
+  }, { total: 0, unread: 0, thisMonth: 0, won: 0, byStatus: { new: 0, following: 0, replied: 0, won: 0, closed: 0 } });
+  res.json({ byOwner, totals, statuses: LEAD_STATUS_LABEL });
+});
+
+// ---------- 前台 AI 客服聊天记录 ----------
+function readChats() { return readJson(CHATS_FILE, []); }
+function writeChats(list) { writeJson(CHATS_FILE, list); }
+const chatRate = new Map();
+function chatRateOk(ip) {
+  const now = Date.now();
+  const arr = (chatRate.get(ip) || []).filter((t) => now - t < 60000);
+  if (arr.length >= 40) return false;
+  arr.push(now); chatRate.set(ip, arr); return true;
+}
+/** 前台上报：创建或追加会话消息（按 sessionId 合并） */
+app.post('/api/chats', (req, res) => {
+  const b = req.body || {};
+  const ip = (req.ip || '').replace(/^::ffff:/, '');
+  if (!chatRateOk(ip)) return res.status(429).json({ error: '过于频繁' });
+  const sessionId = String(b.sessionId || '').slice(0, 64).replace(/[^a-zA-Z0-9_-]/g, '');
+  if (!sessionId || sessionId.length < 8) return res.status(400).json({ error: '无效会话' });
+  const incoming = Array.isArray(b.messages) ? b.messages : [];
+  const msgs = incoming.slice(-80).map((m) => ({
+    role: m && m.role === 'agent' ? 'agent' : 'user',
+    text: String((m && m.text) || '').slice(0, 2000),
+    time: Number((m && m.time) || Date.now()) || Date.now(),
+  })).filter((m) => m.text);
+  if (!msgs.length && !b.append) return res.status(400).json({ error: '无消息' });
+  const chats = readChats();
+  let chat = chats.find((c) => c.sessionId === sessionId);
+  const now = Date.now();
+  if (!chat) {
+    chat = {
+      id: crypto.randomBytes(8).toString('hex'),
+      sessionId, lang: String(b.lang || '').slice(0, 8),
+      page: String(b.page || '').slice(0, 300),
+      messages: [], createdAt: now, updatedAt: now, ip,
+      ua: String((req.headers['user-agent'] || '')).slice(0, 240),
+    };
+    chats.unshift(chat);
+  }
+  if (b.lang) chat.lang = String(b.lang).slice(0, 8);
+  if (b.page) chat.page = String(b.page).slice(0, 300);
+  // append=true 时只追加新消息；否则用完整列表覆盖（前端一般增量追加）
+  if (b.append) chat.messages = (chat.messages || []).concat(msgs);
+  else if (msgs.length) chat.messages = msgs;
+  if (chat.messages.length > 120) chat.messages = chat.messages.slice(-120);
+  chat.updatedAt = now;
+  // 最多保留 500 个会话
+  while (chats.length > 500) chats.pop();
+  writeChats(chats);
+  res.json({ ok: true, id: chat.id });
+});
+function canViewChats(user) {
+  return user && (user.role === 'admin' || user.role === 'sales');
+}
+app.get('/api/chats', requireAuth, (req, res) => {
+  if (!canViewChats(req.user)) return res.status(403).json({ error: '无权限' });
+  const list = readChats().map((c) => ({
+    id: c.id, sessionId: c.sessionId, lang: c.lang, page: c.page,
+    createdAt: c.createdAt, updatedAt: c.updatedAt, ip: c.ip,
+    messageCount: (c.messages || []).length,
+    preview: ((c.messages || []).filter((m) => m.role === 'user').slice(-1)[0] || {}).text || '',
+  }));
+  res.json({ chats: list });
+});
+app.get('/api/chats/:id', requireAuth, (req, res) => {
+  if (!canViewChats(req.user)) return res.status(403).json({ error: '无权限' });
+  const chat = readChats().find((c) => c.id === req.params.id);
+  if (!chat) return res.status(404).json({ error: '不存在' });
+  res.json({ chat });
+});
+app.delete('/api/chats', requireAuth, (req, res) => {
+  if (req.user.role !== 'admin') return res.status(403).json({ error: '无权限' });
+  let chats = readChats();
+  if (req.body && req.body.all) chats = [];
+  else chats = chats.filter((c) => c.id !== (req.body && req.body.id));
+  writeChats(chats);
+  res.json({ ok: true });
 });
 
 // ---------- 访问统计 ----------
