@@ -1,0 +1,972 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>代理商价目表生成器 · Distributor Price List Builder</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700;800&family=Noto+Sans+SC:wght@300;400;500;700;900&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
+<style>
+  :root{
+    --bg:#fbf2e6; --card:#fffdf8; --ink:#4a3526; --ink-soft:#9a8167;
+    --line:#ecdcc6; --line-soft:#f4ead9; --accent:#e2613c; --accent-d:#c84e2c;
+    --accent-2:#c98a34; --accent-soft:#fce7da; --honey-soft:#f7ecd6;
+    --head:#6b4a37; --head-sub:#8a6750;
+    --shadow:0 1px 2px rgba(108,70,40,.06),0 14px 32px -20px rgba(108,70,40,.35);
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    font-family:"Noto Sans SC","Sora",system-ui,sans-serif;color:var(--ink);background-color:var(--bg);
+    background-image:radial-gradient(circle at 18% 0%,#fdf0df 0,transparent 42%),radial-gradient(circle at 90% 8%,#fbe7d6 0,transparent 36%),linear-gradient(rgba(150,100,60,.035) 1px,transparent 1px),linear-gradient(90deg,rgba(150,100,60,.035) 1px,transparent 1px);
+    background-size:auto,auto,28px 28px,28px 28px;-webkit-font-smoothing:antialiased;min-height:100vh;
+  }
+  .wrap{max-width:1280px;margin:0 auto;padding:26px 20px 80px;}
+  .masthead{display:flex;align-items:flex-end;justify-content:space-between;gap:18px;flex-wrap:wrap;margin-bottom:18px;border-bottom:2px solid var(--accent);padding-bottom:14px;}
+  .brand{display:flex;align-items:baseline;gap:13px;flex-wrap:wrap;}
+  .brand .mark{font-family:"Sora",sans-serif;font-weight:800;letter-spacing:-.02em;font-size:27px;color:var(--ink);line-height:1;}
+  .brand .mark b{color:var(--accent);}
+  .brand .tag{font-family:"Sora",sans-serif;font-size:11px;letter-spacing:.2em;text-transform:uppercase;color:var(--ink-soft);}
+  .masthead .hint{font-size:12.5px;color:var(--ink-soft);max-width:340px;text-align:right;line-height:1.6;}
+
+  .draftbar{display:flex;align-items:center;gap:9px;flex-wrap:wrap;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:9px 13px;margin-bottom:20px;box-shadow:var(--shadow);}
+  .draftbar .status{font-size:12px;color:var(--ink-soft);margin-left:auto;display:flex;align-items:center;gap:6px;}
+  .dot-live{width:8px;height:8px;border-radius:50%;background:#5fae6a;box-shadow:0 0 0 3px rgba(95,174,106,.18);}
+  .dot-off{width:8px;height:8px;border-radius:50%;background:#c9a23a;}
+
+  .panel{background:var(--card);border:1px solid var(--line);border-radius:14px;box-shadow:var(--shadow);margin-bottom:20px;overflow:hidden;}
+  .panel-head{display:flex;align-items:center;gap:12px;padding:14px 18px;border-bottom:1px solid var(--line-soft);background:linear-gradient(180deg,#fff,#fdf4e7);flex-wrap:wrap;}
+  .panel-head .step{width:26px;height:26px;border-radius:8px;background:var(--accent);color:#fff;font-family:"Sora",sans-serif;font-weight:700;font-size:14px;display:grid;place-items:center;flex:none;}
+  .panel-head h2{font-size:16px;margin:0;font-weight:700;}
+  .panel-head .sub{font-size:12.5px;color:var(--ink-soft);margin-left:auto;}
+  .panel-body{padding:18px;}
+
+  .setup-grid{display:grid;grid-template-columns:220px 1fr;gap:20px;}
+  @media(max-width:780px){.setup-grid{grid-template-columns:1fr;}}
+  .logo-drop{border:2px dashed var(--line);border-radius:12px;background:#fdf6ec;aspect-ratio:16/9;display:grid;place-items:center;text-align:center;cursor:pointer;transition:.18s;position:relative;overflow:hidden;padding:10px;}
+  .logo-drop:hover{border-color:var(--accent);background:var(--accent-soft);}
+  .logo-drop.has-img{border-style:solid;border-color:var(--line);background:#fff;}
+  .logo-drop img{max-width:100%;max-height:100%;object-fit:contain;}
+  .logo-drop .ph{color:var(--ink-soft);font-size:12.5px;line-height:1.6;pointer-events:none;}
+  .logo-drop .ph .ic{font-size:26px;display:block;margin-bottom:6px;}
+  .logo-clear{position:absolute;top:6px;right:6px;width:24px;height:24px;border-radius:50%;border:none;background:rgba(74,53,38,.8);color:#fff;cursor:pointer;font-size:14px;line-height:1;display:none;}
+  .logo-drop.has-img .logo-clear{display:block;}
+
+  .fields{display:grid;grid-template-columns:1fr 1fr;gap:13px 15px;align-content:start;}
+  @media(max-width:560px){.fields{grid-template-columns:1fr;}}
+  .field.full{grid-column:1/-1;}
+  label.lab{display:block;font-size:12px;font-weight:600;color:var(--ink-soft);margin-bottom:5px;}
+  .inp{width:100%;padding:9px 11px;border:1px solid var(--line);border-radius:9px;font-family:inherit;font-size:14px;color:var(--ink);background:#fff;transition:.15s;}
+  .inp:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft);}
+  .inp.big{font-size:20px;font-weight:700;font-family:"Sora","Noto Sans SC",sans-serif;}
+  select.inp{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath fill='%239a8167' d='M6 8L0 0h12z'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 12px center;padding-right:30px;}
+  textarea.inp{resize:vertical;line-height:1.6;min-height:92px;}
+  .tax-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap;}
+  .switch{display:inline-flex;align-items:center;gap:8px;font-size:12.5px;color:var(--ink-soft);cursor:pointer;user-select:none;}
+  .switch input{width:16px;height:16px;accent-color:var(--accent);}
+  .subhead{grid-column:1/-1;font-family:"Sora","Noto Sans SC",sans-serif;font-weight:700;font-size:13px;color:var(--ink);border-top:1px dashed var(--line);padding-top:13px;margin-top:2px;display:flex;align-items:center;gap:8px;}
+  .subhead .dot{width:7px;height:7px;border-radius:50%;background:var(--accent);}
+
+  .toolbar{display:flex;gap:9px;flex-wrap:wrap;align-items:center;}
+  .btn{display:inline-flex;align-items:center;gap:7px;cursor:pointer;font-family:inherit;font-size:13.5px;font-weight:600;padding:9px 15px;border-radius:9px;border:1px solid var(--ink);background:var(--ink);color:#fff;transition:.16s;white-space:nowrap;}
+  .btn:hover{transform:translateY(-1px);box-shadow:0 8px 18px -10px rgba(108,70,40,.5);}
+  .btn.ghost{background:#fff;color:var(--ink);border-color:var(--line);}
+  .btn.ghost:hover{background:#fdf6ec;border-color:var(--accent);}
+  .btn.accent{background:var(--accent);border-color:var(--accent);}
+  .btn.accent:hover{background:var(--accent-d);}
+  .btn.caramel{background:var(--accent-2);border-color:var(--accent-2);}
+  .btn.sm{padding:7px 12px;font-size:12.5px;}
+  .btn .ic{font-size:15px;}
+  .spacer{flex:1;}
+  .seg{display:inline-flex;border:1px solid var(--accent);border-radius:9px;overflow:hidden;}
+  .seg button{border:none;background:#fff;padding:9px 15px;font-family:inherit;font-size:13px;font-weight:600;cursor:pointer;color:var(--ink);transition:.15s;}
+  .seg button+button{border-left:1px solid var(--line);}
+  .seg button.active{background:var(--accent);color:#fff;}
+
+  /* ---- product cards (responsive editor) ---- */
+  #editor{display:flex;flex-direction:column;gap:15px;}
+  .pcard{border:1px solid var(--line);border-radius:14px;background:var(--card);overflow:hidden;box-shadow:0 8px 22px -18px rgba(108,70,40,.4);}
+  .pcard-head{display:flex;align-items:center;gap:11px;padding:11px 13px;background:linear-gradient(180deg,#fff,var(--accent-soft));border-bottom:1px solid var(--line-soft);flex-wrap:wrap;}
+  .pbadge{background:var(--accent);color:#fff;font-family:"Sora",sans-serif;font-weight:700;font-size:12px;padding:5px 10px;border-radius:7px;white-space:nowrap;}
+  .pname-inp{flex:1;min-width:170px;font-size:16px;font-weight:700;padding:9px 11px;border:1px solid var(--line);border-radius:9px;font-family:inherit;color:var(--ink);background:#fff;}
+  .pname-inp:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft);}
+  .del-prod{border:1px solid #dd9c84;background:#fff;color:#b54a2e;border-radius:8px;padding:7px 11px;font-family:inherit;font-size:12.5px;cursor:pointer;white-space:nowrap;}
+  .del-prod:hover{background:#fbe6df;}
+  .plink-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:0 13px 11px;background:linear-gradient(180deg,var(--accent-soft),#fffaf1);border-bottom:1px dashed var(--line-soft);}
+  .plink-row .flab{margin:0;white-space:nowrap;}
+  .plink-inp{flex:1;min-width:180px;border:1px solid var(--line);background:#fff;border-radius:8px;padding:7px 10px;font-family:inherit;font-size:12.5px;color:var(--ink);}
+  .plink-inp:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft);}
+  .plink-meta{font-size:11.5px;color:var(--ink-soft);display:flex;align-items:center;gap:6px;flex-wrap:wrap;width:100%;}
+  .plink-meta a{color:var(--accent-d);word-break:break-all;}
+  .plink-meta button{border:1px solid var(--line);background:#fff;border-radius:6px;padding:3px 8px;font-family:inherit;font-size:11px;cursor:pointer;color:var(--ink);}
+  .plink-meta button:hover{border-color:var(--accent);background:var(--accent-soft);}
+  .variants{padding:12px 13px;display:flex;flex-direction:column;gap:11px;}
+  table.q td.pname a.prod-link{color:var(--accent-d);text-decoration:underline;font-weight:700;}
+  table.q td.pname a.prod-link:hover{color:var(--accent);}
+  /* ---- public product page ---- */
+  .ppage{display:none;max-width:920px;margin:0 auto;padding:28px 18px 80px;}
+  .ppage.show{display:block;}
+  .ppage-back{font-size:13px;color:var(--ink-soft);margin-bottom:16px;}
+  .ppage-back a{color:var(--accent-d);text-decoration:none;}
+  .ppage-card{background:var(--card);border:1px solid var(--line);border-radius:16px;box-shadow:var(--shadow);overflow:hidden;}
+  .ppage-head{padding:22px 24px;border-bottom:1px solid var(--line-soft);background:linear-gradient(180deg,#fff,#fdf4e7);display:flex;gap:18px;align-items:center;flex-wrap:wrap;}
+  .ppage-head img.logo{max-height:56px;max-width:160px;object-fit:contain;}
+  .ppage-head .co{font-family:"Sora","Noto Sans SC",sans-serif;font-weight:800;font-size:20px;color:var(--ink);}
+  .ppage-head .co-en{font-size:13px;color:var(--ink-soft);margin-top:2px;}
+  .ppage-body{padding:22px 24px 28px;}
+  .ppage-title{font-family:"Sora","Noto Sans SC",sans-serif;font-weight:800;font-size:28px;margin:0 0 6px;color:var(--ink);letter-spacing:-.02em;}
+  .ppage-sub{font-size:13px;color:var(--ink-soft);margin-bottom:20px;}
+  .ppage-ext{margin-bottom:18px;}
+  .ppage-ext a{color:var(--accent-d);font-weight:600;}
+  .ppage-vars{display:flex;flex-direction:column;gap:16px;}
+  .ppage-var{display:grid;grid-template-columns:160px 1fr;gap:16px;padding:16px;border:1px solid var(--line);border-radius:12px;background:#fffaf1;}
+  @media(max-width:640px){.ppage-var{grid-template-columns:1fr;}}
+  .ppage-var img{width:100%;aspect-ratio:4/3;object-fit:cover;border-radius:8px;background:#eee;}
+  .ppage-var .ph{width:100%;aspect-ratio:4/3;border-radius:8px;background:var(--honey-soft);display:grid;place-items:center;color:var(--ink-soft);font-size:13px;}
+  .ppage-var h3{margin:0 0 8px;font-size:17px;color:var(--ink);}
+  .ppage-var .specs{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px 12px;font-size:13px;}
+  .ppage-var .specs dt{color:var(--ink-soft);font-size:11px;font-weight:600;}
+  .ppage-var .specs dd{margin:2px 0 0;color:var(--ink);font-weight:600;}
+  .ppage-var .desc{margin-top:10px;font-size:13.5px;line-height:1.65;color:#5a4636;}
+  .ppage-err{text-align:center;padding:60px 20px;color:var(--ink-soft);}
+  body.public-mode .wrap{display:none;}
+  body.public-mode .ppage{display:block;}
+  body.public-mode .toast{display:none;}
+  .vcard{border:1px dashed var(--line);border-radius:11px;padding:12px;background:#fffaf1;}
+  .vcard-top{display:flex;align-items:center;gap:10px;margin-bottom:10px;}
+  .vtag{font-family:"Sora",sans-serif;font-weight:700;font-size:11.5px;color:#8a5a1f;background:#f4e6cd;padding:4px 10px;border-radius:6px;white-space:nowrap;}
+  .del-var{margin-left:auto;border:none;background:none;color:#b54a2e;font-size:12px;cursor:pointer;}
+  .del-var:hover{text-decoration:underline;}
+  .v-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(155px,1fr));gap:10px 12px;align-items:start;}
+  @media(max-width:520px){.v-grid{grid-template-columns:repeat(auto-fit,minmax(130px,1fr));}}
+  .f{display:flex;flex-direction:column;min-width:0;}
+  .f.full{grid-column:1/-1;}
+  .flab{font-size:11px;font-weight:600;color:var(--ink-soft);margin-bottom:4px;}
+  .cell-inp{width:100%;border:1px solid var(--line);background:#fff;border-radius:8px;padding:8px 10px;font-family:inherit;font-size:13.5px;color:var(--ink);resize:vertical;}
+  .cell-inp:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft);}
+  textarea.cell-inp{min-height:38px;line-height:1.5;}
+  .img-up{width:100%;max-width:150px;height:72px;border:1.5px dashed var(--line);border-radius:8px;display:grid;place-items:center;cursor:pointer;overflow:hidden;background:#fff;font-size:11.5px;color:var(--ink-soft);text-align:center;position:relative;}
+  .img-up:hover{border-color:var(--accent);}
+  .img-up img{width:100%;height:100%;object-fit:cover;}
+  .img-up .x{position:absolute;top:3px;right:3px;width:18px;height:18px;border-radius:50%;background:rgba(74,53,38,.82);color:#fff;border:none;cursor:pointer;font-size:11px;line-height:1;}
+  .add-var{margin:0 13px 13px;}
+  .empty-note{padding:28px;text-align:center;color:var(--ink-soft);font-size:13.5px;}
+
+  /* ---- preview ---- */
+  #paper-wrap{overflow-x:auto;background:#e7dac6;border-radius:12px;padding:20px;-webkit-overflow-scrolling:touch;}
+  #paper{background:#fff;width:1180px;margin:0 auto;padding:34px 38px 38px;color:#3a2a1d;box-shadow:0 12px 44px -18px rgba(80,50,25,.45);}
+  .q-head{display:flex;align-items:center;gap:22px;border-bottom:3px solid var(--accent);padding-bottom:16px;}
+  .q-logo{flex:none;} .q-logo img{max-width:200px;max-height:84px;object-fit:contain;display:block;}
+  .q-title-block{flex:1;min-width:0;}
+  .q-company{font-family:"Sora","Noto Sans SC",sans-serif;font-weight:800;font-size:32px;line-height:1.12;letter-spacing:-.01em;color:var(--ink);}
+  .q-company-en{font-family:"Sora",sans-serif;font-weight:700;font-size:18px;color:#7a5538;margin-top:3px;}
+  .q-sub{font-size:13.5px;color:#8a6c52;margin-top:6px;}
+  .q-doc{flex:none;text-align:right;}
+  .q-doc .big{font-family:"Sora",sans-serif;font-weight:700;font-size:22px;letter-spacing:.1em;color:var(--accent);line-height:1.2;}
+  .q-doc .big small{display:block;font-size:13px;letter-spacing:.05em;color:#c25a30;font-weight:600;}
+  .q-doc .meta{font-size:12.5px;color:#8a6c52;margin-top:8px;line-height:1.8;}
+  .q-doc .meta b{color:#4a3526;font-weight:600;}
+  table.q{border-collapse:collapse;width:100%;margin-top:18px;font-size:12.5px;table-layout:auto;}
+  table.q th,table.q td{border:1px solid #cbb79c;padding:6px 9px;text-align:center;vertical-align:middle;white-space:nowrap;}
+  table.q td.pname{white-space:nowrap;}
+  table.q thead th{background:var(--head);color:#fff;font-weight:600;font-size:12px;line-height:1.25;}
+  table.q thead th .en{display:block;font-weight:400;font-size:9.5px;opacity:.85;}
+  table.q thead tr.sub th{background:var(--head-sub);font-weight:500;font-size:11.5px;}
+  table.q td.desc,table.q td.remark{text-align:left;font-size:11.5px;line-height:1.45;white-space:normal;word-break:break-word;}
+  table.q tbody tr.grpB td{background:#fbf3e6;}
+  table.q tbody tr.gtop td{border-top:2px solid #a9805a;}
+  table.q .pimg{width:78px;height:58px;object-fit:cover;border-radius:4px;display:inline-block;}
+  table.q td.no{font-family:"Sora",sans-serif;font-weight:700;color:var(--accent);}
+  table.q td.pname{font-weight:700;color:var(--ink);text-align:left;}
+  table.q .price{font-family:"Sora","Noto Sans SC",sans-serif;font-weight:600;white-space:nowrap;}
+  .q-cond{margin-top:18px;border:1.5px solid var(--accent);border-radius:9px;padding:14px 18px;background:#fdf4e8;}
+  .q-cond + .q-cond{margin-top:10px;}
+  .q-cond h4{margin:0 0 8px;font-family:"Sora","Noto Sans SC",sans-serif;font-size:14px;font-weight:700;color:var(--ink);border-left:4px solid var(--accent);padding-left:9px;}
+  .q-cond .line{font-size:12px;color:#5a4636;line-height:1.85;padding-left:9px;}
+  .q-foot{display:flex;justify-content:space-between;gap:24px;margin-top:16px;font-size:12px;color:#8a6c52;flex-wrap:wrap;}
+  .q-foot .note{max-width:62%;line-height:1.7;} .q-foot .sign{text-align:right;line-height:2.2;color:#5a4636;}
+  .q-empty{padding:40px;text-align:center;color:#b09a80;}
+  col.c-no{width:34px;} col.c-name{width:auto;} col.c-model{width:auto;} col.c-img{width:88px;}
+  col.c-sz{width:auto;} col.c-speed{width:auto;} col.c-desc{width:200px;} col.c-pack{width:auto;}
+  col.c-price{width:auto;} col.c-remark{width:120px;}
+
+  .toast{position:fixed;left:50%;bottom:26px;transform:translateX(-50%) translateY(20px);background:var(--ink);color:#fff;padding:12px 20px;border-radius:10px;font-size:13.5px;box-shadow:0 12px 30px -10px rgba(80,50,25,.5);opacity:0;pointer-events:none;transition:.25s;z-index:99;max-width:90vw;text-align:center;}
+  .toast.show{opacity:1;transform:translateX(-50%) translateY(0);}
+  .toast.busy::after{content:"";display:inline-block;width:12px;height:12px;margin-left:9px;border:2px solid rgba(255,255,255,.3);border-top-color:#fff;border-radius:50%;animation:spin .7s linear infinite;vertical-align:-2px;}
+  @keyframes spin{to{transform:rotate(360deg);}}
+  .foot-credit{text-align:center;font-size:12px;color:var(--ink-soft);margin-top:28px;line-height:1.7;}
+
+  @media(max-width:600px){
+    .wrap{padding:18px 13px 70px;}
+    .brand .mark{font-size:23px;} .masthead .hint{display:none;}
+    .panel-body{padding:14px;} #paper{padding:22px 20px 26px;}
+    .btn{padding:8px 12px;font-size:13px;}
+  }
+
+  /* ---- account / cloud ---- */
+  .acctbar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;background:linear-gradient(180deg,#fff,#fdf4e7);border:1px solid var(--line);border-radius:12px;padding:9px 14px;margin-bottom:14px;box-shadow:var(--shadow);}
+  .acctbar .who{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--ink);}
+  .acctbar .who .av{width:26px;height:26px;border-radius:50%;background:var(--accent);color:#fff;display:grid;place-items:center;font-weight:700;font-size:13px;font-family:"Sora",sans-serif;}
+  .acctbar .role{font-size:11px;color:#fff;background:var(--accent-2);border-radius:5px;padding:2px 7px;}
+  .cloud-name{font-weight:700;color:var(--ink);}
+  .cloud-sync{font-size:12px;color:var(--ink-soft);display:inline-flex;align-items:center;gap:6px;}
+  select.list-pick{appearance:none;border:1px solid var(--line);border-radius:8px;padding:7px 28px 7px 11px;font-family:inherit;font-size:13px;color:var(--ink);background:#fff url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath fill='%239a8167' d='M6 8L0 0h12z'/%3E%3C/svg%3E") no-repeat right 10px center;max-width:230px;}
+
+  .modal-mask{position:fixed;inset:0;background:rgba(60,38,20,.5);backdrop-filter:blur(3px);display:none;align-items:center;justify-content:center;z-index:200;padding:18px;}
+  .modal-mask.show{display:flex;}
+  .modal{background:var(--card);border-radius:16px;width:100%;max-width:400px;box-shadow:0 30px 80px -30px rgba(60,38,20,.6);overflow:hidden;}
+  .modal-head{padding:18px 22px 0;}
+  .modal-head h3{margin:0;font-family:"Sora","Noto Sans SC",sans-serif;font-size:20px;color:var(--ink);}
+  .modal-head p{margin:6px 0 0;font-size:12.5px;color:var(--ink-soft);line-height:1.6;}
+  .modal-tabs{display:flex;gap:6px;padding:14px 22px 0;}
+  .modal-tabs button{flex:1;border:none;background:#f4e9d8;color:var(--ink-soft);padding:9px;border-radius:9px 9px 0 0;font-family:inherit;font-size:13.5px;font-weight:600;cursor:pointer;}
+  .modal-tabs button.active{background:var(--accent);color:#fff;}
+  .modal-body{padding:16px 22px 22px;display:flex;flex-direction:column;gap:11px;}
+  .modal-body .lab{font-size:12px;font-weight:600;color:var(--ink-soft);margin-bottom:4px;display:block;}
+  .modal-body .inp{width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:9px;font-family:inherit;font-size:14px;background:#fff;color:var(--ink);}
+  .modal-body .inp:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft);}
+  .modal-err{font-size:12.5px;color:#b54a2e;min-height:16px;}
+  .modal-foot{display:flex;gap:10px;align-items:center;margin-top:4px;}
+  .modal-foot .btn{flex:1;justify-content:center;}
+  .modal .skip{background:none;border:none;color:var(--ink-soft);font-size:12.5px;cursor:pointer;text-decoration:underline;font-family:inherit;}
+  @media(max-width:600px){ .acctbar{padding:9px 11px;} .cloud-sync{width:100%;} }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <!-- ACCOUNT / CLOUD BAR -->
+  <div class="acctbar" id="acctbar">
+    <span class="who" id="whoBox"><span class="cloud-sync">☁ 云端账号未登录 · 数据仅存本机</span></span>
+    <span class="spacer" style="flex:1;"></span>
+    <button class="btn sm accent" id="loginBtn"><span class="ic">☁</span>登录 / 注册</button>
+    <button class="btn sm ghost" id="logoutBtn" style="display:none;">退出登录</button>
+  </div>
+
+  <div class="masthead">
+    <div class="brand"><div class="mark">代理商<b>价目表</b>生成器</div><div class="tag">Distributor&nbsp;Price&nbsp;List</div></div>
+    <div class="hint">填表 → 生成<b>中文/英文/双语</b>价目表 → 导出 <b>Excel/PDF</b>（可点商品详情链接）。一名多型号自动绑定，支持草稿保存。</div>
+  </div>
+
+  <!-- DRAFT BAR -->
+  <div class="draftbar">
+    <button class="btn sm caramel" id="saveDraft"><span class="ic">💾</span>保存草稿</button>
+    <button class="btn sm ghost" id="exportDraft"><span class="ic">⬇</span>导出草稿文件</button>
+    <button class="btn sm ghost" id="importDraft"><span class="ic">⬆</span>导入草稿</button>
+    <input type="file" id="draftFile" accept=".json,application/json" hidden>
+    <span class="cloudbox" id="cloudBox" style="display:none;align-items:center;gap:9px;flex-wrap:wrap;">
+      <span style="width:1px;height:20px;background:var(--line);"></span>
+      <select class="list-pick" id="listPick" title="切换云端价目表"></select>
+      <button class="btn sm accent" id="cloudSave"><span class="ic">☁</span>云端保存</button>
+      <button class="btn sm ghost" id="cloudNew"><span class="ic">＋</span>新建</button>
+      <button class="btn sm ghost" id="cloudDel" title="删除当前云端价目表">🗑</button>
+    </span>
+    <span class="status" id="saveStatus"></span>
+  </div>
+
+  <!-- STEP 1 -->
+  <section class="panel">
+    <div class="panel-head"><span class="step">1</span><h2>公司信息与代理政策</h2><span class="sub">Logo、公司名将显示在价目表顶部</span></div>
+    <div class="panel-body">
+      <div class="setup-grid">
+        <div>
+          <label class="lab">公司 LOGO</label>
+          <div class="logo-drop" id="logoDrop">
+            <input type="file" id="logoInput" accept="image/*" hidden>
+            <div class="ph"><span class="ic">⬆</span>点击上传 Logo<br>建议 PNG / 透明背景</div>
+            <button class="logo-clear" id="logoClear" title="移除">×</button>
+          </div>
+        </div>
+        <div class="fields">
+          <div class="field full"><label class="lab">公司名称 · 中文（大号显示）</label><input class="inp big" id="companyName" placeholder="例：XX 智能装备有限公司" value="XX 智能装备有限公司"></div>
+          <div class="field full"><label class="lab">公司名称 · 英文 / Company Name (EN)</label><input class="inp" id="companyNameEn" placeholder="e.g. XX Intelligent Equipment Co., Ltd." value="XX Intelligent Equipment Co., Ltd."></div>
+          <div class="field full"><label class="lab">副标题 / 标语（选填，中或英）</label><input class="inp" id="companySub" placeholder="例：高速包装机械 · 整线交钥匙方案"></div>
+          <div class="field"><label class="lab">价目表编号</label><input class="inp" id="quoteNo" placeholder="例：PL2026-0525-001"></div>
+          <div class="field"><label class="lab">日期</label><input class="inp" id="quoteDate" type="date"></div>
+          <div class="field"><label class="lab">联系人 / 电话（选填）</label><input class="inp" id="contact" placeholder="例：张经理 +86 138-0000-0000"></div>
+          <div class="field"><label class="lab">币种 / Currency</label><select class="inp" id="currency"></select></div>
+          <div class="field full"><div class="tax-row"><label class="lab" style="margin:0;">税率</label><input class="inp" id="taxRate" type="number" step="0.01" value="13" style="width:88px;"> <span style="font-size:13px;color:var(--ink-soft);">%</span><label class="switch"><input type="checkbox" id="autoTax" checked> 输入含税价后，自动计算不含税价</label></div></div>
+          <div class="field full"><label class="switch" style="font-size:13px;"><input type="checkbox" id="hideTax"> 价目表仅显示「不含税价」，隐藏含税列（底部自动注明：含税另加税点）</label></div>
+          <div class="subhead"><span class="dot"></span>成为代理商条件（显示在价目表底部）</div>
+          <div class="field"><label class="lab">中文条款（每行一条）</label><textarea class="inp" id="condCn"></textarea></div>
+          <div class="field"><label class="lab">English Terms (one per line)</label><textarea class="inp" id="condEn"></textarea></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- STEP 2 -->
+  <section class="panel">
+    <div class="panel-head"><span class="step">2</span><h2>产品明细（填表）</h2><span class="sub" id="rowCount">0 个产品</span></div>
+    <div class="panel-body">
+      <div class="toolbar" style="margin-bottom:14px;">
+        <button class="btn accent" id="addProd"><span class="ic">＋</span>新增产品</button>
+        <button class="btn ghost" id="demoBtn"><span class="ic">✦</span>填入示例数据</button>
+        <button class="btn ghost" id="clearBtn"><span class="ic">⟲</span>清空全部</button>
+        <span class="spacer"></span>
+      </div>
+      <div id="editor"></div>
+      <div class="empty-note" id="emptyNote">还没有产品。点击「新增产品」或「填入示例数据」开始。<br>提示：一个产品可在其下「添加型号」，多个型号会自动共用同一品名。<br>可为产品填写「商品详情链接」；登录并云端保存后也会自动生成可分享的公开详情页，导出 Excel/PDF 时可点击跳转。</div>
+    </div>
+  </section>
+
+  <!-- STEP 3 -->
+  <section class="panel">
+    <div class="panel-head"><span class="step">3</span><h2>预览与导出</h2><span class="sub">所见即所得 · 含图片导出</span></div>
+    <div class="panel-body">
+      <div class="toolbar" style="margin-bottom:14px;">
+        <div class="seg" id="langSeg"><button data-lang="cn" class="active">中文</button><button data-lang="en">English</button><button data-lang="bi">中英对照</button></div>
+        <span class="spacer"></span>
+        <button class="btn caramel" id="exportXlsx"><span class="ic">▦</span>导出 Excel</button>
+        <button class="btn accent" id="exportPdf"><span class="ic">⤓</span>导出 PDF</button>
+        <button class="btn ghost" id="printBtn"><span class="ic">🖶</span>打印</button>
+      </div>
+      <div id="paper-wrap"><div id="paper"></div></div>
+    </div>
+  </section>
+
+  <div class="foot-credit">代理商价目表生成器 · 草稿自动保存于本机浏览器，<b>建议重要数据用「导出草稿文件」备份</b>，可在任意设备「导入草稿」继续编辑。</div>
+</div>
+
+<!-- 公开商品详情页（客户从 PDF/Excel 链接进入） -->
+<div class="ppage" id="publicPage">
+  <div class="ppage-back"><a href="/">← 返回价目表生成器</a></div>
+  <div id="publicPageBody"></div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<div class="modal-mask" id="authModal">
+  <div class="modal">
+    <div class="modal-head"><h3 id="authTitle">登录</h3><p id="authHint">登录后，你的价目表将保存在云端，可在任意电脑 / 手机登录查看与编辑，数据永久保留。</p></div>
+    <div class="modal-tabs"><button id="tabLogin" class="active">登录</button><button id="tabReg">注册新账号</button></div>
+    <div class="modal-body">
+      <div id="regNameWrap" style="display:none;"><label class="lab">显示名（选填）</label><input class="inp" id="authName" placeholder="如 张经理"></div>
+      <div><label class="lab">邮箱</label><input class="inp" id="authEmail" type="email" placeholder="you@company.com" autocomplete="username"></div>
+      <div><label class="lab">密码</label><input class="inp" id="authPass" type="password" placeholder="至少 6 位" autocomplete="current-password"></div>
+      <div class="modal-err" id="authErr"></div>
+      <div class="modal-foot"><button class="btn accent" id="authGo">登录</button></div>
+      <div style="text-align:center;"><button class="skip" id="authSkip">暂不登录，仅用本机</button></div>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ===== currencies ===== */
+const CURRENCIES=[
+  ["CNY","¥","人民币"],["USD","$","美元"],["EUR","€","欧元"],["GBP","£","英镑"],["JPY","¥","日元"],
+  ["KRW","₩","韩元"],["HKD","HK$","港币"],["TWD","NT$","新台币"],["SGD","S$","新加坡元"],["AUD","A$","澳元"],
+  ["CAD","C$","加元"],["CHF","Fr","瑞士法郎"],["INR","₹","印度卢比"],["RUB","₽","卢布"],["BRL","R$","巴西雷亚尔"],
+  ["ZAR","R","南非兰特"],["AED","AED","阿联酋迪拉姆"],["SAR","SAR","沙特里亚尔"],["THB","฿","泰铢"],["VND","₫","越南盾"],
+  ["IDR","Rp","印尼盾"],["MYR","RM","马来西亚林吉特"],["PHP","₱","菲律宾比索"],["MXN","Mex$","墨西哥比索"],["TRY","₺","土耳其里拉"],
+  ["SEK","kr","瑞典克朗"],["NOK","kr","挪威克朗"],["DKK","kr","丹麦克朗"],["NZD","NZ$","新西兰元"],["PLN","zł","波兰兹罗提"],["ILS","₪","以色列谢克尔"]
+];
+const CUR_SYM={}; CURRENCIES.forEach(c=>CUR_SYM[c[0]]=c[1]);
+const $=s=>document.querySelector(s);
+(function(){ const s=$("#currency"); CURRENCIES.forEach(c=>{const o=document.createElement("option");o.value=c[0];o.textContent=`${c[0]} ${c[1]} · ${c[2]}`;s.appendChild(o);}); s.value="CNY"; })();
+function curSym(){ return CUR_SYM[$("#currency").value]||""; }
+function curText(){ return `${curSym()} ${$("#currency").value}`; }
+
+/* ===== i18n ===== */
+const T={
+  title:{cn:"代理商价目表",en:"DISTRIBUTOR PRICE LIST"},
+  no:{cn:"序号",en:"No."}, name:{cn:"品名",en:"Product"}, model:{cn:"型号",en:"Model"}, img:{cn:"图片",en:"Photo"},
+  wsize:{cn:"工作尺寸",en:"Working Size"}, max:{cn:"最大",en:"Max"}, min:{cn:"最小",en:"Min"},
+  speed:{cn:"生产速度",en:"Capacity"}, desc:{cn:"产品简介",en:"Description"}, pack:{cn:"打包尺寸",en:"Packing Size"},
+  agent:{cn:"代理商价格",en:"Distributor Price"}, market:{cn:"市场价格",en:"Market Price"},
+  incl:{cn:"含税",en:"Incl. Tax"}, excl:{cn:"不含税",en:"Excl. Tax"}, remark:{cn:"备注",en:"Remarks"},
+  link:{cn:"详情",en:"Details"},
+  dno:{cn:"编号",en:"No."}, ddate:{cn:"日期",en:"Date"}, dcur:{cn:"币种",en:"Currency"}, dcontact:{cn:"联系",en:"Contact"},
+  cond:{cn:"成为代理商条件",en:"Requirements to Become a Distributor"},
+  sign:{cn:"供货方（盖章）：________________　日期：____________",en:"Supplier (Signature / Stamp): ____________　Date: __________"}
+};
+function hideTax(){ return $("#hideTax").checked; }
+function taxExtraNote(){ const r=parseFloat($("#taxRate").value)||0;
+  return MODE==="en" ? ` All prices above are exclusive of tax; ${r}% VAT to be added for tax-inclusive prices.`
+                     : ` 以上价格均为不含税价，含税须另加 ${r}% 税点。`; }
+function noteText(){ const c=curText(); let base=MODE==="en" ? `Note: All prices are quoted in ${c}. This price list is valid for 30 days and subject to a formal contract. Distributor prices are confidential and for authorized distributors only.`
+                     : `说明：以上价格以 ${c} 计价，本价目表有效期 30 天，最终以正式合同为准；代理商价格属保密信息，仅供授权代理商参考。`;
+  if(hideTax()) base+=taxExtraNote();
+  return base; }
+const COND_CN_DEFAULT=["具备合法营业执照及相关行业经营资质；","在所属区域具备销售渠道与售后服务能力；","首次进货金额不低于约定额度，并完成年度销售目标；","严格遵守区域保护与价格管理政策，不得跨区窜货；","签订正式代理协议并缴纳代理保证金。"].join("\n");
+const COND_EN_DEFAULT=["Hold a valid business license and relevant industry qualifications;","Have established sales channels and after-sales capability within the territory;","Meet the minimum initial order value and the agreed annual sales target;","Strictly comply with territorial protection and price policies; no cross-region selling;","Sign a formal distributor agreement and pay the security deposit."].join("\n");
+
+/* ===== state ===== */
+const VFIELDS=["model","img","wsMax","wsMin","speed","desc","pack","agentTax","agentNo","mktTax","mktNo","remark"];
+let products=[], logoData=null, uid=1, vid=1, MODE="cn", READY=false;
+let AUTH=null, currentListId=null, cloudLists=[], authMode="login", cloudTimer;
+const editor=$("#editor");
+function newPublicId(){
+  const a=new Uint8Array(8); (window.crypto||crypto).getRandomValues(a);
+  return Array.from(a,b=>b.toString(16).padStart(2,"0")).join("");
+}
+function newVariant(init){ const o={_vid:vid++}; VFIELDS.forEach(f=>o[f]=(init&&init[f]!=null)?init[f]:(f==="img"?null:"")); return o; }
+function newProduct(name){ return {_id:uid++, publicId:newPublicId(), name:name||"", link:"", variants:[newVariant()]}; }
+function normalizeLink(u){
+  const s=(u||"").trim(); if(!s) return "";
+  if(/^https?:\/\//i.test(s)) return s;
+  if(/^\/\//.test(s)) return location.protocol+s;
+  if(/^[a-z0-9.-]+\.[a-z]{2,}/i.test(s)) return "https://"+s;
+  return s;
+}
+function productDetailUrl(p){
+  const custom=normalizeLink(p.link);
+  if(custom && /^https?:\/\//i.test(custom)) return custom;
+  // 本站公开详情页：登录并云端保存后才会同步到服务器，才可被客户打开
+  if(p.publicId && AUTH && AUTH.token && currentListId){
+    return `${location.origin}/p/${p.publicId}`;
+  }
+  return "";
+}
+$("#quoteDate").value=new Date().toISOString().slice(0,10);
+$("#condCn").value=COND_CN_DEFAULT; $("#condEn").value=COND_EN_DEFAULT;
+
+/* ===== logo ===== */
+const logoDrop=$("#logoDrop"), logoInput=$("#logoInput");
+logoDrop.addEventListener("click",e=>{ if(e.target.id!=="logoClear") logoInput.click(); });
+logoInput.addEventListener("change",e=>{ const f=e.target.files[0]; if(!f)return; const r=new FileReader(); r.onload=ev=>{logoData=ev.target.result;paintLogo();renderPreview();}; r.readAsDataURL(f); logoInput.value=""; });
+$("#logoClear").addEventListener("click",e=>{ e.stopPropagation(); logoData=null; paintLogo(); renderPreview(); });
+function paintLogo(){
+  if(logoData){ logoDrop.classList.add("has-img"); logoDrop.querySelector(".ph").style.display="none";
+    let img=logoDrop.querySelector("img.logo-prev"); if(!img){img=document.createElement("img");img.className="logo-prev";logoDrop.insertBefore(img,$("#logoClear"));} img.src=logoData;
+  }else{ logoDrop.classList.remove("has-img"); const ph=logoDrop.querySelector(".ph"); if(ph)ph.style.display="block"; const img=logoDrop.querySelector("img.logo-prev"); if(img)img.remove(); }
+}
+
+/* ===== helpers ===== */
+function esc(s){ return (s??"").toString().replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
+function escAttr(s){ return esc(s).replace(/"/g,"&quot;"); }
+function fmtNum(n){ return Number(n).toLocaleString("en-US",{maximumFractionDigits:2}); }
+function maybeAutoTax(v,f){ if(!$("#autoTax").checked)return; const rate=parseFloat($("#taxRate").value)||0;
+  const x=parseFloat(String(v[f]).replace(/[^\d.]/g,"")); if(isNaN(x))return; const noTax=x/(1+rate/100);
+  if(f==="agentTax")v.agentNo=fmtNum(noTax); if(f==="mktTax")v.mktNo=fmtNum(noTax); }
+
+/* ===== editor (responsive cards) ===== */
+function renderEditor(){
+  editor.innerHTML="";
+  products.forEach((p,pi)=>{
+    if(!p.publicId) p.publicId=newPublicId();
+    if(p.link==null) p.link="";
+    const pubUrl=`${location.origin}/p/${p.publicId}`;
+    const card=document.createElement("div"); card.className="pcard";
+    card.innerHTML=`
+      <div class="pcard-head">
+        <span class="pbadge">产品 ${pi+1}</span>
+        <input class="pname-inp" data-pname placeholder="产品名称（多个型号共用此名称）" value="${escAttr(p.name)}">
+        <button class="del-prod">删除产品</button>
+      </div>
+      <div class="plink-row">
+        <label class="flab">商品详情链接</label>
+        <input class="plink-inp" data-plink type="url" placeholder="选填：外部商品页 URL，如 https://www.example.com/product/xxx" value="${escAttr(p.link||"")}">
+        <div class="plink-meta">
+          <span>公开详情页（云端保存后客户可打开）：</span>
+          <a href="${escAttr(pubUrl)}" target="_blank" rel="noopener">${esc(pubUrl)}</a>
+          <button type="button" data-copy-link>复制链接</button>
+          <button type="button" data-use-public title="用公开页作为导出链接">用作导出链接</button>
+        </div>
+      </div>
+      <div class="variants"></div>
+      <button class="btn ghost sm add-var"><span class="ic">＋</span>为该产品添加型号</button>`;
+    const vc=card.querySelector(".variants");
+    p.variants.forEach((v,vi)=>{
+      const vb=document.createElement("div"); vb.className="vcard";
+      vb.innerHTML=`
+        <div class="vcard-top"><span class="vtag">型号 ${vi+1}</span>${p.variants.length>1?'<button class="del-var">移除此型号</button>':''}</div>
+        <div class="v-grid">
+          <div class="f"><label class="flab">图片</label><div class="img-up ${v.img?'has':''}" data-up><input type="file" accept="image/*" hidden data-img>${v.img?`<img src="${v.img}"><button class="x" data-imgx>×</button>`:'<span>＋上传图片</span>'}</div></div>
+          <div class="f"><label class="flab">型号</label><input class="cell-inp" data-f="model" value="${escAttr(v.model)}"></div>
+          <div class="f"><label class="flab">工作尺寸·最大</label><input class="cell-inp" data-f="wsMax" value="${escAttr(v.wsMax)}" placeholder="如 600×400"></div>
+          <div class="f"><label class="flab">工作尺寸·最小</label><input class="cell-inp" data-f="wsMin" value="${escAttr(v.wsMin)}" placeholder="如 200×150"></div>
+          <div class="f"><label class="flab">生产速度</label><input class="cell-inp" data-f="speed" value="${escAttr(v.speed)}" placeholder="如 60 包/分"></div>
+          <div class="f"><label class="flab">打包尺寸</label><input class="cell-inp" data-f="pack" value="${escAttr(v.pack)}" placeholder="L×W×H"></div>
+          <div class="f"><label class="flab">代理价·含税</label><input class="cell-inp" data-f="agentTax" data-price value="${escAttr(v.agentTax)}"></div>
+          <div class="f"><label class="flab">代理价·不含税</label><input class="cell-inp" data-f="agentNo" value="${escAttr(v.agentNo)}"></div>
+          <div class="f"><label class="flab">市场价·含税</label><input class="cell-inp" data-f="mktTax" data-price value="${escAttr(v.mktTax)}"></div>
+          <div class="f"><label class="flab">市场价·不含税</label><input class="cell-inp" data-f="mktNo" value="${escAttr(v.mktNo)}"></div>
+          <div class="f full"><label class="flab">产品简介</label><textarea class="cell-inp" data-f="desc" rows="2">${esc(v.desc)}</textarea></div>
+          <div class="f full"><label class="flab">备注</label><textarea class="cell-inp" data-f="remark" rows="1">${esc(v.remark)}</textarea></div>
+        </div>`;
+      vb.querySelectorAll("[data-f]").forEach(el=>el.addEventListener("input",()=>{ const f=el.dataset.f; v[f]=el.value; if(el.hasAttribute("data-price"))maybeAutoTax(v,f); renderPreview(); }));
+      const up=vb.querySelector("[data-up]"), imgInput=vb.querySelector("[data-img]");
+      up.addEventListener("click",e=>{ if(e.target.hasAttribute("data-imgx"))return; imgInput.click(); });
+      imgInput.addEventListener("change",e=>{ const f=e.target.files[0]; if(!f)return; const rd=new FileReader(); rd.onload=ev=>{v.img=ev.target.result;renderEditor();renderPreview();}; rd.readAsDataURL(f); });
+      const x=vb.querySelector("[data-imgx]"); if(x)x.addEventListener("click",e=>{ e.stopPropagation(); v.img=null; renderEditor(); renderPreview(); });
+      const dv=vb.querySelector(".del-var"); if(dv)dv.addEventListener("click",()=>{ p.variants=p.variants.filter(q=>q._vid!==v._vid); renderEditor(); renderPreview(); });
+      vc.appendChild(vb);
+    });
+    card.querySelector("[data-pname]").addEventListener("input",e=>{ p.name=e.target.value; renderPreview(); });
+    card.querySelector("[data-plink]").addEventListener("input",e=>{ p.link=e.target.value; renderPreview(); });
+    card.querySelector("[data-copy-link]").addEventListener("click",async()=>{
+      try{ await navigator.clipboard.writeText(pubUrl); toast("公开链接已复制 ✓"); }
+      catch(e){ prompt("复制此链接：", pubUrl); }
+    });
+    card.querySelector("[data-use-public]").addEventListener("click",()=>{ p.link=pubUrl; renderEditor(); renderPreview(); toast("已填入公开详情页链接"); });
+    card.querySelector(".del-prod").addEventListener("click",()=>{ if(!confirm("删除整个产品（含其所有型号）？"))return; products=products.filter(q=>q._id!==p._id); renderEditor(); renderPreview(); });
+    card.querySelector(".add-var").addEventListener("click",()=>{ p.variants.push(newVariant()); renderEditor(); renderPreview(); });
+    editor.appendChild(card);
+  });
+  $("#emptyNote").style.display=products.length?"none":"block";
+  const models=products.reduce((s,p)=>s+p.variants.length,0);
+  $("#rowCount").textContent=`${products.length} 个产品 · ${models} 个型号`;
+}
+
+/* ===== preview ===== */
+function H(k){ const e=T[k]; if(MODE==="cn")return e.cn; if(MODE==="en")return e.en; return e.cn+'<span class="en">'+e.en+'</span>'; }
+function Hc(k){ const e=T[k], s=curSym()?` (${curSym()})`:""; if(MODE==="cn")return e.cn+s; if(MODE==="en")return e.en+s; return e.cn+s+'<span class="en">'+e.en+s+'</span>'; }
+function txt(k){ const e=T[k]; if(MODE==="cn")return e.cn; if(MODE==="en")return e.en; return e.cn+" / "+e.en; }
+function condBlock(){
+  const cn=$("#condCn").value.trim(), en=$("#condEn").value.trim();
+  const fmt=(title,text)=>{ if(!text)return""; const lines=text.split(/\n/).map(l=>l.trim()).filter(Boolean)
+      .map((l,i)=>`<div class="line">${/^\d|^[•\-–]/.test(l)?"":(i+1)+". "}${esc(l)}</div>`).join("");
+    return `<div class="q-cond"><h4>${title}</h4>${lines}</div>`; };
+  if(MODE==="cn")return fmt(T.cond.cn,cn); if(MODE==="en")return fmt(T.cond.en,en);
+  return fmt(T.cond.cn,cn)+fmt(T.cond.en,en);
+}
+function renderPreview(){
+  const paper=$("#paper");
+  const cn=$("#companyName").value.trim()||"公司名称", en=$("#companyNameEn").value.trim();
+  const sub=$("#companySub").value.trim(), no=$("#quoteNo").value.trim(), date=$("#quoteDate").value, contact=$("#contact").value.trim();
+  let big,second; if(MODE==="en"){ big=en||cn; second=en?cn:""; } else { big=cn; second=en; }
+  const docTitle = MODE==="bi" ? `${T.title.cn}<small>${T.title.en}</small>` : (MODE==="en"?T.title.en:T.title.cn);
+  let head=`<div class="q-head">
+    ${logoData?`<div class="q-logo"><img src="${logoData}"></div>`:""}
+    <div class="q-title-block"><div class="q-company">${esc(big)}</div>${second?`<div class="q-company-en">${esc(second)}</div>`:""}${sub?`<div class="q-sub">${esc(sub)}</div>`:""}</div>
+    <div class="q-doc"><div class="big">${docTitle}</div><div class="meta">
+      ${no?`<div><b>${txt("dno")}：</b>${esc(no)}</div>`:""}${date?`<div><b>${txt("ddate")}：</b>${esc(date)}</div>`:""}
+      <div><b>${txt("dcur")}：</b>${esc(curText())}</div>${contact?`<div><b>${txt("dcontact")}：</b>${esc(contact)}</div>`:""}
+    </div></div></div>`;
+  let body;
+  if(products.length===0){ body=`<div class="q-empty">${MODE==="en"?"No products yet.":"暂无产品明细，请在上方「填表」区域添加产品。"}</div>`; }
+  else{
+    const HT=hideTax();
+    let rows="";
+    products.forEach((p,pi)=>{
+      const n=p.variants.length, grp=pi%2? "grpB":"";
+      const url=productDetailUrl(p);
+      const nameHtml=url
+        ? `<a class="prod-link" href="${escAttr(url)}" target="_blank" rel="noopener" data-prod-link="${escAttr(url)}">${esc(p.name)||"-"}</a>`
+        : (esc(p.name)||"-");
+      p.variants.forEach((v,vi)=>{
+        rows+=`<tr class="${grp} ${vi===0?'gtop':''}">`;
+        if(vi===0){ rows+=`<td class="no" rowspan="${n}">${pi+1}</td><td class="pname" rowspan="${n}">${nameHtml}</td>`; }
+        rows+=`<td>${esc(v.model)||"-"}</td><td>${v.img?`<img class="pimg" src="${v.img}">`:"-"}</td>
+          <td>${esc(v.wsMax)||"-"}</td><td>${esc(v.wsMin)||"-"}</td><td>${esc(v.speed)||"-"}</td>
+          <td class="desc">${esc(v.desc)||"-"}</td><td>${esc(v.pack)||"-"}</td>`;
+        if(HT){ rows+=`<td class="price">${esc(v.agentNo)||"-"}</td><td class="price">${esc(v.mktNo)||"-"}</td>`; }
+        else  { rows+=`<td class="price">${esc(v.agentTax)||"-"}</td><td class="price">${esc(v.agentNo)||"-"}</td><td class="price">${esc(v.mktTax)||"-"}</td><td class="price">${esc(v.mktNo)||"-"}</td>`; }
+        rows+=`<td class="remark">${esc(v.remark)||"-"}</td></tr>`;
+      });
+    });
+    const priceCols = HT ? `<col class="c-price"><col class="c-price">` : `<col class="c-price"><col class="c-price"><col class="c-price"><col class="c-price">`;
+    const priceHead = HT
+      ? `<th rowspan="2">${Hc("agent")}</th><th rowspan="2">${Hc("market")}</th>`
+      : `<th colspan="2">${Hc("agent")}</th><th colspan="2">${Hc("market")}</th>`;
+    const priceSub = HT ? `` : `<th>${H("incl")}</th><th>${H("excl")}</th><th>${H("incl")}</th><th>${H("excl")}</th>`;
+    body=`<table class="q"><colgroup><col class="c-no"><col class="c-name"><col class="c-model"><col class="c-img"><col class="c-sz"><col class="c-sz"><col class="c-speed"><col class="c-desc"><col class="c-pack">${priceCols}<col class="c-remark"></colgroup>
+      <thead><tr>
+        <th rowspan="2">${H("no")}</th><th rowspan="2">${H("name")}</th><th rowspan="2">${H("model")}</th><th rowspan="2">${H("img")}</th>
+        <th colspan="2">${H("wsize")}</th><th rowspan="2">${H("speed")}</th><th rowspan="2">${H("desc")}</th><th rowspan="2">${H("pack")}</th>
+        ${priceHead}<th rowspan="2">${H("remark")}</th>
+      </tr><tr class="sub"><th>${H("max")}</th><th>${H("min")}</th>${priceSub}</tr></thead>
+      <tbody>${rows}</tbody></table>${condBlock()}
+      <div class="q-foot"><div class="note">${esc(noteText())}</div><div class="sign">${txt("sign").split("　").map(esc).join("<br>")}</div></div>`;
+  }
+  paper.innerHTML=head+body;
+  scheduleSave();
+}
+
+/* ===== buttons ===== */
+$("#addProd").addEventListener("click",()=>{ products.push(newProduct()); renderEditor(); renderPreview(); });
+$("#clearBtn").addEventListener("click",()=>{ if(products.length&&!confirm("确定清空所有产品？"))return; products=[]; renderEditor(); renderPreview(); });
+["companyName","companyNameEn","companySub","quoteNo","quoteDate","contact"].forEach(id=>$("#"+id).addEventListener("input",renderPreview));
+$("#currency").addEventListener("change",renderPreview);
+$("#condCn").addEventListener("input",renderPreview); $("#condEn").addEventListener("input",renderPreview);
+$("#hideTax").addEventListener("change",renderPreview);
+$("#langSeg").addEventListener("click",e=>{ const b=e.target.closest("button"); if(!b)return; MODE=b.dataset.lang; [...$("#langSeg").children].forEach(x=>x.classList.toggle("active",x===b)); renderPreview(); });
+$("#autoTax").addEventListener("change",()=>{ if($("#autoTax").checked)recalcAll(); scheduleSave(); });
+$("#taxRate").addEventListener("input",()=>{ if($("#autoTax").checked)recalcAll(); else scheduleSave(); });
+function recalcAll(){ products.forEach(p=>p.variants.forEach(v=>{maybeAutoTax(v,"agentTax");maybeAutoTax(v,"mktTax");})); renderEditor(); renderPreview(); }
+
+$("#demoBtn").addEventListener("click",()=>{
+  if(MODE==="en"){
+    products=[
+      {_id:uid++,publicId:newPublicId(),name:"Automatic Pillow Packing Machine",link:"",variants:[
+        newVariant({model:"DXD-450",img:null,wsMax:"450×300×90mm",wsMin:"60×40×5mm",speed:"40-180 bags/min",desc:"Servo control, auto film tracking; for biscuits, bread, hardware.",pack:"3700×680×1400mm",agentTax:"72,000",agentNo:"63,716.81",mktTax:"92,000",mktNo:"81,415.93",remark:"Standard model"}),
+        newVariant({model:"DXD-500S",img:null,wsMax:"600×400×120mm",wsMin:"80×40×5mm",speed:"40-230 bags/min",desc:"Dual-frequency servo, wider film, higher speed.",pack:"3950×720×1450mm",agentTax:"86,000",agentNo:"76,106.19",mktTax:"108,000",mktNo:"95,575.22",remark:"Incl. feeding conveyor"})
+      ]},
+      {_id:uid++,publicId:newPublicId(),name:"Vertical Granule Packing Machine",link:"",variants:[
+        newVariant({model:"VFFS-520",img:null,wsMax:"230×320mm",wsMin:"50×60mm",speed:"20-50 bags/min",desc:"Multi-head weigher for seeds, nuts and snacks.",pack:"1250×1200×3500mm",agentTax:"98,000",agentNo:"86,725.66",mktTax:"126,000",mktNo:"111,504.42",remark:""}),
+        newVariant({model:"VFFS-720",img:null,wsMax:"320×450mm",wsMin:"60×80mm",speed:"20-60 bags/min",desc:"Larger bag format, optional N2 flushing.",pack:"1400×1350×3800mm",agentTax:"125,000",agentNo:"110,619.47",mktTax:"158,000",mktNo:"139,823.01",remark:"Optional N2"})
+      ]},
+      {_id:uid++,publicId:newPublicId(),name:"Heat Shrink Wrapping Machine",link:"",variants:[
+        newVariant({model:"BS-4525",img:null,wsMax:"450×250mm",wsMin:"—",speed:"0-20 m/min",desc:"PE/POF film, constant-temp tunnel; for bottled water.",pack:"2200×880×1700mm",agentTax:"32,000",agentNo:"28,318.58",mktTax:"42,000",mktNo:"37,168.14",remark:"Incl. conveyor"})
+      ]}
+    ];
+  }else{
+    products=[
+      {_id:uid++,publicId:newPublicId(),name:"全自动枕式包装机",link:"",variants:[
+        newVariant({model:"DXD-450",img:null,wsMax:"450×300×90mm",wsMin:"60×40×5mm",speed:"40-180 包/分",desc:"伺服控制，膜长自动追踪，适用饼干、面包、五金件等。",pack:"3700×680×1400mm",agentTax:"72,000",agentNo:"63,716.81",mktTax:"92,000",mktNo:"81,415.93",remark:"标准型"}),
+        newVariant({model:"DXD-500S",img:null,wsMax:"600×400×120mm",wsMin:"80×40×5mm",speed:"40-230 包/分",desc:"双频伺服，宽膜、更高速度。",pack:"3950×720×1450mm",agentTax:"86,000",agentNo:"76,106.19",mktTax:"108,000",mktNo:"95,575.22",remark:"含送料链斗"})
+      ]},
+      {_id:uid++,publicId:newPublicId(),name:"立式颗粒包装机",link:"",variants:[
+        newVariant({model:"VFFS-520",img:null,wsMax:"230×320mm",wsMin:"50×60mm",speed:"20-50 包/分",desc:"多列电子秤计量，适用瓜子、坚果、膨化食品。",pack:"1250×1200×3500mm",agentTax:"98,000",agentNo:"86,725.66",mktTax:"126,000",mktNo:"111,504.42",remark:""}),
+        newVariant({model:"VFFS-720",img:null,wsMax:"320×450mm",wsMin:"60×80mm",speed:"20-60 包/分",desc:"大袋型，可选氮气填充。",pack:"1400×1350×3800mm",agentTax:"125,000",agentNo:"110,619.47",mktTax:"158,000",mktNo:"139,823.01",remark:"可选氮气"})
+      ]},
+      {_id:uid++,publicId:newPublicId(),name:"热收缩包装机",link:"",variants:[
+        newVariant({model:"BS-4525",img:null,wsMax:"450×250mm",wsMin:"—",speed:"0-20 m/min",desc:"PE/POF 膜通用，恒温风道，适用矿泉水、罐装饮料。",pack:"2200×880×1700mm",agentTax:"32,000",agentNo:"28,318.58",mktTax:"42,000",mktNo:"37,168.14",remark:"含输送台"})
+      ]}
+    ];
+  }
+  renderEditor(); renderPreview(); toast("已填入示例数据（含一名多型号示例）");
+});
+
+/* ===== toast ===== */
+let toastTimer;
+function toast(msg,busy=false){ const t=$("#toast"); t.textContent=msg; t.className="toast show"+(busy?" busy":""); clearTimeout(toastTimer); if(!busy)toastTimer=setTimeout(()=>t.classList.remove("show"),2400); return t; }
+
+/* ===== DRAFT save/load ===== */
+const LS_KEY="plb_draft_v2";
+let lsAvailable=true;
+(function(){ try{ localStorage.setItem("__t","1"); localStorage.removeItem("__t"); }catch(e){ lsAvailable=false; } })();
+function collectDraft(){
+  return { v:2, savedAt:new Date().toISOString(),
+    company:{name:$("#companyName").value,nameEn:$("#companyNameEn").value,sub:$("#companySub").value,quoteNo:$("#quoteNo").value,date:$("#quoteDate").value,contact:$("#contact").value},
+    currency:$("#currency").value, taxRate:$("#taxRate").value, autoTax:$("#autoTax").checked, hideTax:$("#hideTax").checked, mode:MODE,
+    condCn:$("#condCn").value, condEn:$("#condEn").value, logo:logoData,
+    products:products.map(p=>({name:p.name,link:p.link||"",publicId:p.publicId||newPublicId(),variants:p.variants.map(v=>{const o={};VFIELDS.forEach(f=>o[f]=v[f]);return o;}))}) };
+}
+function applyDraft(d){
+  if(!d||!d.company) throw new Error("格式不正确");
+  $("#companyName").value=d.company.name||""; $("#companyNameEn").value=d.company.nameEn||"";
+  $("#companySub").value=d.company.sub||""; $("#quoteNo").value=d.company.quoteNo||"";
+  $("#quoteDate").value=d.company.date||new Date().toISOString().slice(0,10); $("#contact").value=d.company.contact||"";
+  if(d.currency&&CUR_SYM[d.currency])$("#currency").value=d.currency;
+  if(d.taxRate!=null)$("#taxRate").value=d.taxRate; $("#autoTax").checked=d.autoTax!==false; $("#hideTax").checked=!!d.hideTax;
+  $("#condCn").value=d.condCn??COND_CN_DEFAULT; $("#condEn").value=d.condEn??COND_EN_DEFAULT;
+  logoData=d.logo||null; paintLogo();
+  MODE=(["cn","en","bi"].includes(d.mode))?d.mode:"cn";
+  [...$("#langSeg").children].forEach(x=>x.classList.toggle("active",x.dataset.lang===MODE));
+  products=(d.products||[]).map(p=>({_id:uid++, publicId:p.publicId||newPublicId(), name:p.name||"", link:p.link||"", variants:(p.variants&&p.variants.length?p.variants:[{}]).map(v=>newVariant(v))}));
+  renderEditor(); renderPreview();
+}
+let saveTimer;
+function scheduleSave(){ if(!READY)return; clearTimeout(saveTimer); saveTimer=setTimeout(doAutoSave,700); scheduleCloudSave(); }
+function doAutoSave(){ if(!lsAvailable){ setStatus(false); return; }
+  try{ localStorage.setItem(LS_KEY,JSON.stringify(collectDraft())); setStatus(true,true); }catch(e){ lsAvailable=false; setStatus(false); } }
+function setStatus(ok,auto){ const el=$("#saveStatus");
+  if(!lsAvailable){ el.innerHTML='<span class="dot-off"></span> 自动保存不可用，请用「导出草稿文件」备份'; return; }
+  const t=new Date().toLocaleTimeString("zh-CN",{hour:"2-digit",minute:"2-digit"});
+  el.innerHTML=`<span class="dot-live"></span> ${auto?"已自动保存":"草稿已保存"} ${t}`;
+}
+$("#saveDraft").addEventListener("click",()=>{ if(lsAvailable){ try{localStorage.setItem(LS_KEY,JSON.stringify(collectDraft()));setStatus(true,false);toast("草稿已保存到本机 ✓");return;}catch(e){lsAvailable=false;} } setStatus(false); toast("本机保存不可用，请改用「导出草稿文件」"); });
+$("#exportDraft").addEventListener("click",()=>{ const blob=new Blob([JSON.stringify(collectDraft(),null,2)],{type:"application/json"});
+  const n=($("#companyName").value.trim()||"价目表").replace(/[\\/:*?"<>|]/g,""); saveAs(blob,`${n}_草稿_${$("#quoteDate").value||"draft"}.json`); toast("草稿文件已导出 ✓"); });
+$("#importDraft").addEventListener("click",()=>$("#draftFile").click());
+$("#draftFile").addEventListener("change",e=>{ const f=e.target.files[0]; if(!f)return; const r=new FileReader();
+  r.onload=ev=>{ try{ applyDraft(JSON.parse(ev.target.result)); toast("草稿已导入 ✓"); }catch(err){ toast("导入失败：文件格式不正确"); } };
+  r.readAsText(f); e.target.value=""; });
+
+/* ===== print ===== */
+$("#printBtn").addEventListener("click",()=>{ const w=window.open("","_blank"); const css=document.querySelector("style").innerHTML;
+  w.document.write(`<html><head><meta charset="utf-8"><title>${$("#companyName").value} ${txt("title")}</title>
+    <link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;700;800&family=Noto+Sans+SC:wght@400;500;700;900&display=swap" rel="stylesheet">
+    <style>${css} body{background:#fff;} #paper{box-shadow:none;width:100%;} @page{size:A4 landscape;margin:10mm;}</style></head>
+    <body><div id="paper">${$("#paper").innerHTML}</div></body></html>`);
+  w.document.close(); setTimeout(()=>{w.focus();w.print();},600); });
+
+/* ===== PDF ===== */
+function addPdfProductLinks(pdf, node, canvas, pageMeta){
+  const links=[...node.querySelectorAll("a.prod-link[data-prod-link]")];
+  if(!links.length) return;
+  const paperRect=node.getBoundingClientRect();
+  const pw=pageMeta.pw, ph=pageMeta.ph, m=pageMeta.m, iw=pageMeta.iw, ih=pageMeta.ih;
+  const usable=ph-m*2;
+  const linkBoxes=links.map(a=>{
+    const r=a.getBoundingClientRect();
+    const url=a.getAttribute("data-prod-link")||a.href;
+    return {
+      url,
+      x: m + ((r.left-paperRect.left)/paperRect.width)*iw,
+      yImg: ((r.top-paperRect.top)/paperRect.height)*ih,
+      w: Math.max(8, (r.width/paperRect.width)*iw),
+      h: Math.max(4, (r.height/paperRect.height)*ih)
+    };
+  }).filter(b=>b.url);
+  const pageCount=pdf.internal.getNumberOfPages();
+  for(let pi=1; pi<=pageCount; pi++){
+    // 与导出切片逻辑一致：第 1 页 imageY=m，之后每页上移 usable
+    const imageY = m - (pi-1)*usable;
+    pdf.setPage(pi);
+    linkBoxes.forEach(b=>{
+      const y=imageY + b.yImg;
+      const y2=y+b.h;
+      if(y2 < m-1 || y > ph-m+1) return;
+      const clipY=Math.max(y, m);
+      const clipH=Math.min(y2, ph-m)-clipY;
+      if(clipH<=1) return;
+      try{ pdf.link(b.x, clipY, b.w, clipH, { url: b.url }); }catch(e){}
+    });
+  }
+}
+$("#exportPdf").addEventListener("click",async()=>{ if(products.length===0){toast("请先添加产品");return;}
+  toast("正在生成 PDF…",true);
+  try{ const node=$("#paper"); const scale=2; const canvas=await html2canvas(node,{scale,backgroundColor:"#ffffff",useCORS:true,windowWidth:node.scrollWidth});
+    const {jsPDF}=window.jspdf; const pdf=new jsPDF("l","mm","a4");
+    const pw=pdf.internal.pageSize.getWidth(), ph=pdf.internal.pageSize.getHeight(), m=8;
+    const iw=pw-m*2, ih=canvas.height*iw/canvas.width, img=canvas.toDataURL("image/jpeg",0.92);
+    let left=ih, pos=m; pdf.addImage(img,"JPEG",m,pos,iw,ih); left-=(ph-m*2);
+    while(left>0){ pos=m-(ih-left); pdf.addPage(); pdf.addImage(img,"JPEG",m,pos,iw,ih); left-=(ph-m*2); }
+    addPdfProductLinks(pdf, node, canvas, {pw,ph,m,iw,ih});
+    pdf.save(fileName("pdf")); toast("PDF 已导出 ✓（品名可点击打开详情）");
+  }catch(err){ console.error(err); toast("PDF 生成失败，请重试"); } });
+
+/* ===== Excel ===== */
+function exH(k){ const e=T[k]; if(MODE==="cn")return e.cn; if(MODE==="en")return e.en; return e.cn+"\n"+e.en; }
+function exHc(k){ const e=T[k], s=curSym()?` (${curSym()})`:""; if(MODE==="cn")return e.cn+s; if(MODE==="en")return e.en+s; return e.cn+s+"\n"+e.en+s; }
+function thin(){const s={style:"thin",color:{argb:"FFCBB79C"}};return{top:s,left:s,bottom:s,right:s};}
+$("#exportXlsx").addEventListener("click",async()=>{ if(products.length===0){toast("请先添加产品");return;}
+  toast("正在生成 Excel…",true);
+  try{
+    const HT=hideTax();
+    const wb=new ExcelJS.Workbook(); const ws=wb.addWorksheet(txt("title"),{views:[{state:"frozen",ySplit:5}],pageSetup:{orientation:"landscape",fitToPage:true,fitToWidth:1}});
+    const widths = HT ? [6,18,15,16,14,14,14,32,17,15,15,18] : [6,18,15,16,13,13,13,30,16,14,14,14,14,18];
+    widths.forEach((w,i)=>ws.getColumn(i+1).width=w);
+    const N=widths.length;                 // 12 or 14
+    const COL_REMARK=N;                     // remark is last col
+    const COL_AGENT=10;                     // agent price block start
+    // title
+    ws.mergeCells(1,1,1,N); const tc=ws.getCell(1,1); const cn=$("#companyName").value.trim(), en=$("#companyNameEn").value.trim();
+    tc.value=MODE==="en"?(en||cn):cn; tc.font={name:"Microsoft YaHei",size:22,bold:true,color:{argb:"FF4A3526"}}; tc.alignment={vertical:"middle",horizontal:logoData?"center":"left"}; ws.getRow(1).height=46;
+    ws.mergeCells(2,1,2,N); const meta=[]; const second=MODE==="en"?(en?cn:""):en; if(second)meta.push(second);
+    if($("#companySub").value.trim())meta.push($("#companySub").value.trim()); meta.push(txt("title"));
+    if($("#quoteNo").value.trim())meta.push(txt("dno")+"："+$("#quoteNo").value.trim()); if($("#quoteDate").value)meta.push(txt("ddate")+"："+$("#quoteDate").value);
+    meta.push(txt("dcur")+"："+curText()); if($("#contact").value.trim())meta.push(txt("dcontact")+"："+$("#contact").value.trim());
+    const mc=ws.getCell(2,1); mc.value=meta.join("    |    "); mc.font={name:"Microsoft YaHei",size:11,color:{argb:"FF8A6C52"}}; mc.alignment={vertical:"middle",horizontal:"center"}; ws.getRow(2).height=20; ws.getRow(3).height=6;
+    if(logoData){ try{ const ext=(logoData.match(/^data:image\/(\w+)/)||[])[1]||"png"; const id=wb.addImage({base64:logoData.split(",")[1],extension:ext==="jpeg"?"jpeg":"png"}); ws.addImage(id,{tl:{col:0.15,row:0.12},ext:{width:150,height:54},editAs:"oneCell"}); }catch(e){} }
+    // headers
+    const HR1=4,HR2=5;
+    const singleCols = HT ? [1,2,3,4,7,8,9,12] : [1,2,3,4,7,8,9,14];
+    singleCols.forEach(c=>ws.mergeCells(HR1,c,HR2,c));
+    ws.mergeCells(HR1,5,HR1,6); ws.getCell(HR1,5).value=exH("wsize");
+    if(HT){
+      ws.mergeCells(HR1,10,HR2,10); ws.getCell(HR1,10).value=exHc("agent");
+      ws.mergeCells(HR1,11,HR2,11); ws.getCell(HR1,11).value=exHc("market");
+    }else{
+      ws.mergeCells(HR1,10,HR1,11); ws.getCell(HR1,10).value=exHc("agent");
+      ws.mergeCells(HR1,12,HR1,13); ws.getCell(HR1,12).value=exHc("market");
+      ws.getCell(HR2,10).value=exH("incl");ws.getCell(HR2,11).value=exH("excl");ws.getCell(HR2,12).value=exH("incl");ws.getCell(HR2,13).value=exH("excl");
+    }
+    ws.getCell(HR1,1).value=exH("no");ws.getCell(HR1,2).value=exH("name");ws.getCell(HR1,3).value=exH("model");ws.getCell(HR1,4).value=exH("img");
+    ws.getCell(HR1,7).value=exH("speed");ws.getCell(HR1,8).value=exH("desc");ws.getCell(HR1,9).value=exH("pack");ws.getCell(HR1,COL_REMARK).value=exH("remark");
+    ws.getCell(HR2,5).value=exH("max");ws.getCell(HR2,6).value=exH("min");
+    [HR1,HR2].forEach(rr=>{ ws.getRow(rr).height=MODE==="bi"?30:20; for(let c=1;c<=N;c++){ const cell=ws.getCell(rr,c); cell.font={name:"Microsoft YaHei",size:10.5,bold:true,color:{argb:"FFFFFFFF"}}; cell.fill={type:"pattern",pattern:"solid",fgColor:{argb:"FF6B4A37"}}; cell.alignment={vertical:"middle",horizontal:"center",wrapText:true}; cell.border=thin(); } });
+    // data
+    let r=HR2+1;
+    products.forEach((p,pi)=>{ const start=r; const shade=(pi%2===1);
+      const detailUrl=productDetailUrl(p);
+      p.variants.forEach((v,vi)=>{ const row=ws.getRow(r); row.height=46;
+        const base=[(vi===0?pi+1:null),(vi===0?(p.name||""):null),v.model,"",v.wsMax,v.wsMin,v.speed,v.desc,v.pack];
+        const priceVals = HT ? [v.agentNo,v.mktNo] : [v.agentTax,v.agentNo,v.mktTax,v.mktNo];
+        const vals=base.concat(priceVals,[v.remark]);
+        const leftIdx = [1,7,N-1];     // name, desc, remark (0-based)
+        vals.forEach((val,i)=>{ const cell=ws.getCell(r,i+1); if(val!=null)cell.value=val;
+          cell.font={name:"Microsoft YaHei",size:10,color:{argb:"FF3A2A1D"}}; cell.alignment={vertical:"middle",horizontal:leftIdx.includes(i)?"left":"center",wrapText:true}; cell.border=thin();
+          if(shade)cell.fill={type:"pattern",pattern:"solid",fgColor:{argb:"FFFBF3E6"}}; });
+        if(v.img){ try{ const ext=(v.img.match(/^data:image\/(\w+)/)||[])[1]||"png"; const id=wb.addImage({base64:v.img.split(",")[1],extension:ext==="jpeg"?"jpeg":"png"}); ws.addImage(id,{tl:{col:3.1,row:r-1+0.1},ext:{width:96,height:54},editAs:"oneCell"}); }catch(e){} }
+        r++; });
+      if(p.variants.length>1){ ws.mergeCells(start,1,r-1,1); ws.mergeCells(start,2,r-1,2); }
+      ws.getCell(start,1).alignment={vertical:"middle",horizontal:"center"};
+      ws.getCell(start,2).alignment={vertical:"middle",horizontal:"left",wrapText:true};
+      ws.getCell(start,1).font={name:"Microsoft YaHei",size:11,bold:true,color:{argb:"FFC84E2C"}};
+      if(detailUrl && (p.name||"").trim()){
+        ws.getCell(start,2).value={ text:p.name||"", hyperlink:detailUrl };
+        ws.getCell(start,2).font={name:"Microsoft YaHei",size:10.5,bold:true,color:{argb:"FF0563C1"},underline:true};
+      } else {
+        ws.getCell(start,2).font={name:"Microsoft YaHei",size:10.5,bold:true,color:{argb:"FF4A3526"}};
+      }
+    });
+    r++;
+    const addCond=(title,text)=>{ if(!text.trim())return; ws.mergeCells(r,1,r,N); const h=ws.getCell(r,1); h.value=title;
+      h.font={name:"Microsoft YaHei",size:12,bold:true,color:{argb:"FF4A3526"}}; h.alignment={horizontal:"left",vertical:"middle"}; ws.getRow(r).height=22; r++;
+      text.split(/\n/).map(l=>l.trim()).filter(Boolean).forEach((l,i)=>{ ws.mergeCells(r,1,r,N); const c=ws.getCell(r,1); c.value=(/^\d|^[•\-–]/.test(l)?"":(i+1)+". ")+l; c.font={name:"Microsoft YaHei",size:10,color:{argb:"FF5A4636"}}; c.alignment={horizontal:"left",vertical:"middle",wrapText:true}; r++; }); r++; };
+    if(MODE==="cn")addCond(T.cond.cn,$("#condCn").value); else if(MODE==="en")addCond(T.cond.en,$("#condEn").value); else { addCond(T.cond.cn,$("#condCn").value); addCond(T.cond.en,$("#condEn").value); }
+    ws.mergeCells(r,1,r,N); const fc=ws.getCell(r,1); fc.value=noteText(); fc.font={name:"Microsoft YaHei",size:9,italic:true,color:{argb:"FF8A6C52"}}; fc.alignment={horizontal:"left",vertical:"middle",wrapText:true};
+    const buf=await wb.xlsx.writeBuffer(); saveAs(new Blob([buf],{type:"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"}),fileName("xlsx")); toast("Excel 已导出 ✓（品名可点击打开详情）");
+  }catch(err){ console.error(err); toast("Excel 生成失败，请重试"); } });
+function fileName(ext){ const n=($("#companyName").value.trim()||"价目表").replace(/[\\/:*?"<>|]/g,""); const d=$("#quoteDate").value||new Date().toISOString().slice(0,10);
+  const tag=MODE==="en"?"PriceList_EN":(MODE==="bi"?"价目表_中英":"代理商价目表"); return `${n}_${tag}_${d}.${ext}`; }
+
+/* ===== init ===== */
+(function init(){
+  const pubMatch=location.pathname.match(/^\/p\/([a-zA-Z0-9_-]{8,32})\/?$/);
+  if(pubMatch){ bootPublicProductPage(pubMatch[1]); return; }
+  let restored=false;
+  if(lsAvailable){ try{ const raw=localStorage.getItem(LS_KEY); if(raw){ applyDraft(JSON.parse(raw)); restored=true; } }catch(e){} }
+  if(!restored){ renderEditor(); renderPreview(); }
+  setStatus(true,true);
+  if(restored) toast("已恢复上次自动保存的草稿");
+  READY=true;
+  restoreAuth();
+})();
+
+/* ===== 公开商品详情页 ===== */
+async function bootPublicProductPage(id){
+  document.body.classList.add("public-mode");
+  document.title="商品详情 · Product Details";
+  const box=$("#publicPageBody");
+  box.innerHTML=`<div class="ppage-err">正在加载商品详情…</div>`;
+  try{
+    const res=await fetch("/api/public/p/"+encodeURIComponent(id));
+    let data=null; try{ data=await res.json(); }catch(e){}
+    if(!res.ok){ box.innerHTML=`<div class="ppage-err">${esc((data&&data.error)||"商品不存在")}<br><br><a href="/">返回首页</a></div>`; return; }
+    renderPublicProduct(data.data||{});
+  }catch(err){
+    box.innerHTML=`<div class="ppage-err">加载失败，请稍后重试。<br><br><a href="/">返回首页</a></div>`;
+  }
+}
+function renderPublicProduct(d){
+  const co=d.company||{};
+  const HT=!!d.hideTax;
+  const cur=d.currency||"CNY";
+  const sym=CUR_SYM[cur]||"";
+  document.title=(d.name||"商品详情")+(co.name?(" · "+co.name):"");
+  const vars=(d.variants&&d.variants.length)?d.variants:[{}];
+  const varHtml=vars.map(v=>{
+    const prices = HT
+      ? `<div><dt>代理价（不含税）</dt><dd>${esc(v.agentNo)||"-"} ${esc(sym)}</dd></div><div><dt>市场价（不含税）</dt><dd>${esc(v.mktNo)||"-"} ${esc(sym)}</dd></div>`
+      : `<div><dt>代理价·含税</dt><dd>${esc(v.agentTax)||"-"} ${esc(sym)}</dd></div><div><dt>代理价·不含税</dt><dd>${esc(v.agentNo)||"-"} ${esc(sym)}</dd></div><div><dt>市场价·含税</dt><dd>${esc(v.mktTax)||"-"} ${esc(sym)}</dd></div><div><dt>市场价·不含税</dt><dd>${esc(v.mktNo)||"-"} ${esc(sym)}</dd></div>`;
+    return `<article class="ppage-var">
+      ${v.img?`<img src="${v.img}" alt="${escAttr(v.model||d.name||"")}">`:`<div class="ph">暂无图片</div>`}
+      <div>
+        <h3>${esc(v.model)||"型号"}</h3>
+        <dl class="specs">
+          <div><dt>工作尺寸·最大</dt><dd>${esc(v.wsMax)||"-"}</dd></div>
+          <div><dt>工作尺寸·最小</dt><dd>${esc(v.wsMin)||"-"}</dd></div>
+          <div><dt>生产速度</dt><dd>${esc(v.speed)||"-"}</dd></div>
+          <div><dt>打包尺寸</dt><dd>${esc(v.pack)||"-"}</dd></div>
+          ${prices}
+          ${v.remark?`<div><dt>备注</dt><dd>${esc(v.remark)}</dd></div>`:""}
+        </dl>
+        ${v.desc?`<div class="desc">${esc(v.desc)}</div>`:""}
+      </div>
+    </article>`;
+  }).join("");
+  const ext=normalizeLink(d.link);
+  $("#publicPageBody").innerHTML=`
+    <div class="ppage-card">
+      <div class="ppage-head">
+        ${d.logo?`<img class="logo" src="${d.logo}" alt="">`:""}
+        <div>
+          <div class="co">${esc(co.name||"")}</div>
+          ${co.nameEn?`<div class="co-en">${esc(co.nameEn)}</div>`:""}
+          ${co.contact?`<div class="co-en">${esc(co.contact)}</div>`:""}
+        </div>
+      </div>
+      <div class="ppage-body">
+        <h1 class="ppage-title">${esc(d.name)||"商品详情"}</h1>
+        <div class="ppage-sub">币种 ${esc(sym)} ${esc(cur)}${co.sub?" · "+esc(co.sub):""}</div>
+        ${ext && /^https?:\/\//i.test(ext) && !ext.includes("/p/") ? `<div class="ppage-ext"><a href="${escAttr(ext)}" target="_blank" rel="noopener">查看官网商品页 →</a></div>` : ""}
+        <div class="ppage-vars">${varHtml}</div>
+      </div>
+    </div>`;
+}
+
+/* ===== cloud / auth ===== */
+const AUTH_KEY="plb_auth_v1";
+function saveAuth(){ try{ if(AUTH)localStorage.setItem(AUTH_KEY,JSON.stringify(AUTH)); else localStorage.removeItem(AUTH_KEY); }catch(e){} }
+async function api(method,path,body){
+  const headers={"Content-Type":"application/json"};
+  if(AUTH&&AUTH.token) headers.Authorization="Bearer "+AUTH.token;
+  const res=await fetch(path,{method,headers,body:body?JSON.stringify(body):undefined});
+  let data=null; try{ data=await res.json(); }catch(e){}
+  if(!res.ok){ const err=new Error((data&&data.error)||("请求失败 "+res.status)); err.status=res.status; throw err; }
+  return data;
+}
+function renderAuth(){
+  const logged=!!(AUTH&&AUTH.user);
+  $("#loginBtn").style.display=logged?"none":""; $("#logoutBtn").style.display=logged?"":"none";
+  $("#cloudBox").style.display=logged?"inline-flex":"none";
+  if(logged){ const u=AUTH.user; const ini=(u.displayName||u.email||"?").slice(0,1).toUpperCase();
+    $("#whoBox").innerHTML=`<span class="av">${ini}</span><span><span class="cloud-name">${esc(u.displayName||u.email)}</span> ${u.role==="admin"?'<span class="role">管理员</span>':""}</span>`;
+  } else { $("#whoBox").innerHTML='<span class="cloud-sync">☁ 云端账号未登录 · 数据仅存本机</span>'; }
+}
+function openAuth(){ $("#authModal").classList.add("show"); setAuthMode("login"); }
+function closeAuth(){ $("#authModal").classList.remove("show"); }
+function setAuthMode(m){ authMode=m;
+  $("#tabLogin").classList.toggle("active",m==="login"); $("#tabReg").classList.toggle("active",m==="register");
+  $("#regNameWrap").style.display=m==="register"?"block":"none";
+  $("#authGo").textContent=m==="login"?"登录":"注册并登录"; $("#authTitle").textContent=m==="login"?"登录":"注册新账号"; $("#authErr").textContent="";
+}
+$("#loginBtn").addEventListener("click",openAuth);
+$("#authSkip").addEventListener("click",closeAuth);
+$("#tabLogin").addEventListener("click",()=>setAuthMode("login"));
+$("#tabReg").addEventListener("click",()=>setAuthMode("register"));
+$("#authModal").addEventListener("click",e=>{ if(e.target.id==="authModal") closeAuth(); });
+$("#authGo").addEventListener("click",doAuth);
+$("#authPass").addEventListener("keydown",e=>{ if(e.key==="Enter") doAuth(); });
+async function doAuth(){
+  const email=$("#authEmail").value.trim(), pass=$("#authPass").value, name=$("#authName").value.trim();
+  $("#authErr").textContent="";
+  if(!email||!pass){ $("#authErr").textContent="请输入邮箱和密码"; return; }
+  try{
+    const path=authMode==="login"?"/api/login":"/api/register";
+    const data=await api("POST",path,{email,password:pass,displayName:name});
+    AUTH={token:data.token,user:data.user}; saveAuth(); closeAuth(); renderAuth();
+    toast((authMode==="login"?"登录成功":"注册成功")+" ✓");
+    await afterLogin();
+  }catch(err){ $("#authErr").textContent=err.message; }
+}
+$("#logoutBtn").addEventListener("click",()=>{ if(!confirm("退出登录？（本机草稿仍会保留）"))return; AUTH=null; currentListId=null; cloudLists=[]; saveAuth(); renderAuth(); setStatus(true,true); toast("已退出登录"); });
+function populateListPick(){ const sel=$("#listPick"); sel.innerHTML="";
+  cloudLists.forEach(l=>{ const o=document.createElement("option"); o.value=l.id; o.textContent=l.title||"未命名"; sel.appendChild(o); });
+  if(currentListId)sel.value=currentListId; }
+async function afterLogin(){
+  try{ const r=await api("GET","/api/lists"); cloudLists=r.lists||[]; populateListPick();
+    if(cloudLists.length){ await loadCloudList(cloudLists[0].id); }
+    else { await createCloudFromCurrent($("#companyName").value.trim()||"我的价目表"); }
+  }catch(err){ toast("读取云端数据失败："+err.message); }
+}
+async function loadCloudList(id){
+  try{ const r=await api("GET","/api/lists/"+id); currentListId=r.id; if(r.data)applyDraft(r.data);
+    populateListPick(); $("#listPick").value=id; setCloudStatus("已从云端载入："+(r.title||""));
+  }catch(err){ toast("载入失败："+err.message); }
+}
+async function createCloudFromCurrent(title){
+  try{ const r=await api("POST","/api/lists",{title,data:collectDraft()}); currentListId=r.id;
+    cloudLists.unshift({id:r.id,title:r.title,updated_at:r.updatedAt}); populateListPick(); $("#listPick").value=r.id; setCloudStatus("已创建云端价目表");
+  }catch(err){ toast("创建失败："+err.message); }
+}
+async function cloudSave(manual){
+  if(!(AUTH&&AUTH.user))return;
+  try{ const title=$("#companyName").value.trim()||"未命名价目表";
+    if(currentListId){ const r=await api("PUT","/api/lists/"+currentListId,{title,data:collectDraft()});
+      const it=cloudLists.find(l=>l.id===currentListId); if(it){it.title=r.title;it.updated_at=r.updatedAt;} populateListPick();
+    } else { await createCloudFromCurrent(title); }
+    renderPreview();
+    setCloudStatus("云端已保存"); if(manual)toast("已保存到云端 ✓（商品公开链接已更新）");
+  }catch(err){ setCloudStatus("云端保存失败",true); if(manual)toast("云端保存失败："+err.message); }
+}
+function scheduleCloudSave(){ if(!(READY&&AUTH&&AUTH.user&&currentListId))return; clearTimeout(cloudTimer); cloudTimer=setTimeout(()=>cloudSave(false),1800); }
+function setCloudStatus(msg,err){ const el=$("#saveStatus"); const t=new Date().toLocaleTimeString("zh-CN",{hour:"2-digit",minute:"2-digit"}); el.innerHTML=`<span class="${err?"dot-off":"dot-live"}"></span> ${msg} ${err?"":t}`; }
+$("#cloudSave").addEventListener("click",()=>cloudSave(true));
+$("#listPick").addEventListener("change",e=>loadCloudList(Number(e.target.value)));
+$("#cloudNew").addEventListener("click",async()=>{ const name=prompt("新价目表名称：",$("#companyName").value.trim()||"新价目表"); if(name===null)return;
+  products=[]; renderEditor(); renderPreview(); await createCloudFromCurrent(name||"未命名价目表"); toast("已新建云端价目表"); });
+$("#cloudDel").addEventListener("click",async()=>{ if(!currentListId)return; if(!confirm("删除当前云端价目表？此操作不可恢复。"))return;
+  try{ await api("DELETE","/api/lists/"+currentListId); cloudLists=cloudLists.filter(l=>l.id!==currentListId); currentListId=null;
+    if(cloudLists.length){ await loadCloudList(cloudLists[0].id); } else { products=[]; renderEditor(); renderPreview(); populateListPick(); }
+    toast("已删除");
+  }catch(err){ toast("删除失败："+err.message); } });
+async function restoreAuth(){
+  let raw; try{ raw=localStorage.getItem(AUTH_KEY); }catch(e){ return; }
+  if(!raw)return; try{ AUTH=JSON.parse(raw); }catch(e){ return; }
+  if(!(AUTH&&AUTH.token)){ AUTH=null; return; }
+  try{ const me=await api("GET","/api/me"); AUTH.user=me.user; saveAuth(); renderAuth(); await afterLogin(); }
+  catch(err){ AUTH=null; saveAuth(); renderAuth(); }
+}
+</script>
+</body>
+</html>
