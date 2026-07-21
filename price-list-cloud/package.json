@@ -1,0 +1,20 @@
+{
+  "name": "price-list-cloud",
+  "version": "1.0.0",
+  "description": "代理商价目表生成器 · 云端版（跨设备登录，数据永久保存）",
+  "main": "server.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node server.js",
+    "init-admin": "node scripts/create-admin.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "better-sqlite3": "^11.3.0",
+    "bcryptjs": "^2.4.3",
+    "jsonwebtoken": "^9.0.2"
+  }
+}
